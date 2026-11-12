@@ -62,13 +62,13 @@ import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.pow
 
-private val StudioBlack = Color(0xFF000000)
-private val StudioSurface = Color(0xFF15191F)
-private val StudioLine = Color(0xFF343B45)
-private val StudioText = Color(0xFFF1F3F5)
-private val StudioMuted = Color(0xFF89929D)
-private val StudioRed = Color(0xFFFF5265)
-private val StudioBlue = Color(0xFF51B8FF)
+private val StudioBlack = Color(0xFF080D16)
+private val StudioSurface = Color(0xFF121C2B)
+private val StudioLine = Color(0xFF26364B)
+private val StudioText = Color(0xFFF4F8FF)
+private val StudioMuted = Color(0xFF8C9CB2)
+private val StudioRed = Color(0xFFFF4F87)
+private val StudioBlue = Color(0xFF43D7F5)
 
 @Composable
 fun StudioTopBar(
@@ -87,37 +87,37 @@ fun StudioTopBar(
     val presetName = state.presets.firstOrNull { it.presetId == state.selectedPresetId }?.presetName ?: "Flat"
 
     Row(
-        modifier = Modifier.fillMaxWidth().height(48.dp).background(StudioBlack).padding(horizontal = 10.dp),
+        modifier = Modifier.fillMaxWidth().height(58.dp).background(Brush.verticalGradient(listOf(Color(0xFF101B2B), StudioBlack))).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
-            modifier = Modifier.width(75.dp),
+            modifier = Modifier.width(86.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             Box(
-                Modifier.size(31.dp).clip(RoundedCornerShape(9.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF2A3038), Color(0xFF101318))))
-                    .border(1.dp, Color(0xFF46505B), RoundedCornerShape(9.dp)),
+                Modifier.size(36.dp).clip(RoundedCornerShape(12.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFF213D58), Color(0xFF101827))))
+                    .border(1.dp, Color(0xFF42627E), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    listOf(7, 14, 10).forEachIndexed { i, h ->
-                        Box(Modifier.width(3.dp).height(h.dp).clip(CircleShape).background(if (i == 1) accent else Color.LightGray))
+                    listOf(10, 20, 14, 24, 12).forEachIndexed { i, h ->
+                        Box(Modifier.width(3.dp).height(h.dp).clip(CircleShape).background(if (i == 1 || i == 3) accent else Color(0xFFB9D4E8)))
                     }
                 }
             }
-            Text("GG", color = StudioText, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 0.6.sp)
+            Text("GG", color = StudioText, fontSize = 14.sp, fontWeight = FontWeight.Black, letterSpacing = 0.9.sp)
         }
 
         Box(
-            Modifier.size(31.dp).clip(CircleShape)
+            Modifier.height(34.dp).width(52.dp).clip(RoundedCornerShape(13.dp))
                 .background(if (state.masterEnabled) accent.copy(alpha = 0.16f) else StudioSurface)
-                .border(1.dp, if (state.masterEnabled) accent else StudioLine, CircleShape)
+                .border(1.dp, if (state.masterEnabled) accent.copy(alpha = 0.85f) else StudioLine, RoundedCornerShape(13.dp))
                 .clickable { onPower(!state.masterEnabled) },
             contentAlignment = Alignment.Center
         ) {
-            Text("⏻", color = if (state.masterEnabled) accent else StudioMuted, fontSize = 17.sp)
+            Text(if (state.masterEnabled) "ON" else "OFF", color = if (state.masterEnabled) accent else StudioMuted, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 0.8.sp)
         }
 
         Spacer(Modifier.weight(1f))
@@ -172,17 +172,18 @@ fun StudioTopBar(
 fun StudioBottomDock(selected: String, accent: Color, onSelect: (String) -> Unit) {
     val destinations = listOf("EQUALIZER", "TONE", "SETTINGS")
     Row(
-        Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 9.dp, vertical = 4.dp)
-            .height(54.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF17191D))
-            .border(1.dp, Color(0xFF282D34), RoundedCornerShape(28.dp)),
+        Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 7.dp)
+            .height(62.dp).clip(RoundedCornerShape(22.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xFF17263A), Color(0xFF0E1725))))
+            .border(1.dp, Color(0xFF2B4058), RoundedCornerShape(22.dp)),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
         destinations.forEach { key ->
             val active = selected == key
             Column(
-                Modifier.weight(1f).fillMaxHeight().padding(vertical = 5.dp)
-                    .clip(RoundedCornerShape(22.dp)).background(if (active) Color(0xFF30353D) else Color.Transparent)
+                Modifier.weight(1f).fillMaxHeight().padding(horizontal = 5.dp, vertical = 6.dp)
+                    .clip(RoundedCornerShape(17.dp)).background(if (active) accent.copy(alpha = 0.13f) else Color.Transparent)
                     .clickable { onSelect(key) },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
