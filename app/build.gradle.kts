@@ -7,13 +7,13 @@ plugins {
 
 android {
     namespace = "com.rohitkhandel.ggequalizer"
-    compileSdk = 36
+    compileSdk = 35
     ndkVersion = "27.2.12479018"
 
     defaultConfig {
         applicationId = "com.rohitkhandel.ggequalizer"
-        minSdk = 26
-        targetSdk = 36
+        minSdk = 28
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
 
@@ -74,13 +74,13 @@ ksp {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.19.1")
-    implementation("androidx.activity:activity-compose:1.14.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.12.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.12.0")
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
 
-    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
+    val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
@@ -90,12 +90,12 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
 
-    implementation("androidx.room:room-runtime:2.8.5")
-    ksp("androidx.room:room-compiler:2.8.5")
+    implementation("androidx.room:room-runtime:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
 
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
