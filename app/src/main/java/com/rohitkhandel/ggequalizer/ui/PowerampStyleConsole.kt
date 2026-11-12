@@ -518,7 +518,7 @@ private fun StudioGainFader(
     Column(modifier.padding(horizontal = if (compact) 0.dp else 1.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (valueMode != "HIDDEN") {
             Text(
-                studioGainValueText(local.floatValue, valueRange, valueMode),
+                studioGainValueText(local.floatValue, valueMode),
                 color = if (selected) accent else StudioText,
                 fontSize = if (compact) 6.sp else 8.sp,
                 fontWeight = FontWeight.Bold,
