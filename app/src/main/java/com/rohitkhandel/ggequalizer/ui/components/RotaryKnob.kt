@@ -50,6 +50,7 @@ fun RotaryKnob(
     defaultValue: Float,
     valueText: String,
     onValueChange: (Float) -> Unit,
+    onInteractionStart: () -> Unit = {},
     modifier: Modifier = Modifier,
     accent: Color = Color(0xFFFF5367),
     knobSize: Dp = 112.dp,
@@ -79,6 +80,7 @@ fun RotaryKnob(
                     var lastDispatch = 0L
                     detectDragGestures(
                         onDragStart = {
+                            onInteractionStart()
                             dragging.value = true
                             startValue = localValue.floatValue
                             accumulated = 0f
@@ -110,6 +112,7 @@ fun RotaryKnob(
                     if (resetOnDoubleTap) {
                         detectTapGestures(
                             onDoubleTap = {
+                                onInteractionStart()
                                 localValue.floatValue = defaultValue.coerceIn(valueRange.start, valueRange.endInclusive)
                                 callback.value(localValue.floatValue)
                                 dragging.value = false

@@ -163,23 +163,6 @@ fun MainEqualizerScreen(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = Carbon,
-        topBar = {
-            StudioTopBar(
-                state = state,
-                accent = accent,
-                onPower = viewModel::setMasterEnabled,
-                onGraphicMode = { viewModel.setBandCount(10) },
-                onParametricMode = { viewModel.setBandCount(32) },
-                onSave = { viewModel.saveCurrentPreset("Console preset") },
-                onImport = {
-                    importLauncher.launch(
-                        arrayOf("text/plain", "application/json", "application/octet-stream")
-                    )
-                },
-                onReset = viewModel::resetAll,
-                onSelectPreset = viewModel::applyPreset
-            )
-        },
         bottomBar = {
             StudioBottomDock(
                 selected = page.name,
@@ -205,7 +188,12 @@ fun MainEqualizerScreen(
                     onVisualizerToggle = {
                         viewModel.setVisualizerEnabled(it)
                         onVisualizerToggle(it)
-                    }
+                    },
+                    onSave = { viewModel.saveCurrentPreset("Console preset") },
+                    onImport = {
+                        importLauncher.launch(arrayOf("text/plain", "application/json", "application/octet-stream"))
+                    },
+                    onReset = viewModel::resetAll
                 )
                 ConsolePage.TONE -> StudioTonePage(
                     state = state,

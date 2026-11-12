@@ -32,7 +32,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -195,196 +194,244 @@ fun StudioBottomDock(selected: String, accent: Color, onSelect: (String) -> Unit
 }
 
 @Composable
-fun StudioEqualizerWorkspace(state: EqUiState, viewModel: EqViewModel, accent: Color, onVisualizerToggle: (Boolean) -> Unit) {
+fun StudioEqualizerWorkspace(
+    state: EqUiState,
+    viewModel: EqViewModel,
+    accent: Color,
+    onVisualizerToggle: (Boolean) -> Unit,
+    onSave: () -> Unit,
+    onImport: () -> Unit,
+    onReset: () -> Unit
+) {
     Column(Modifier.fillMaxSize().background(StudioBlack)) {
-        Row(
-            Modifier.fillMaxWidth().height(37.dp).padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("EQUALIZER", color = StudioText, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
-                Text(if (state.bandCount == 32) "PARAMETRIC · 32 FILTERS" else "${state.bandCount} BAND GRAPHIC", color = StudioMuted, fontSize = 7.sp, letterSpacing = 0.8.sp)
-            }
-            StudioModeButton("GRAPHIC", state.bandCount != 32, accent) { viewModel.setBandCount(10) }
-            Spacer(Modifier.width(5.dp))
-            StudioModeButton("PARAM", state.bandCount == 32, accent) { viewModel.setBandCount(32) }
-            if (state.bandCount != 32) {
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    if (state.bandCount == 15) "15" else "10",
-                    color = accent, fontSize = 8.sp, fontWeight = FontWeight.Black,
-                    modifier = Modifier.clip(RoundedCornerShape(7.dp)).background(accent.copy(alpha = 0.14f))
-                        .clickable { viewModel.setBandCount(if (state.bandCount == 10) 15 else 10) }.padding(horizontal = 7.dp, vertical = 6.dp)
-                )
-            }
-        }
-
-        Box(Modifier.fillMaxWidth().weight(1f)) {
-            if (state.bandCount == 32) StudioParametricBands(state, viewModel, accent)
-            else StudioGraphicBands(state, viewModel, accent)
-        }
-
+        Box(Modifier.fillMaxWidth().weight(1f)) { StudioBandWorkspace(state, viewModel, accent) }
         StudioSpectrumStrip(state, accent) { onVisualizerToggle(!state.visualizerEnabled) }
+        StudioPlayerBadge(state)
+        StudioEqActionRack(state, accent, viewModel, onSave, onImport, onReset)
         StudioBassTrebleRow(state, viewModel)
     }
 }
 
 @Composable
-private fun StudioModeButton(label: String, active: Boolean, accent: Color, onClick: () -> Unit) {
-    Box(
-        Modifier.clip(RoundedCornerShape(8.dp)).background(if (active) accent.copy(alpha = 0.17f) else StudioSurface)
-            .border(1.dp, if (active) accent.copy(alpha = 0.65f) else StudioLine, RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick).padding(horizontal = 9.dp, vertical = 6.dp)
-    ) {
-        Text(label, color = if (active) accent else StudioMuted, fontSize = 7.sp, fontWeight = FontWeight.Black, letterSpacing = 0.4.sp)
+private fun StudioBandWorkspace(state: EqUiState, viewModel: EqViewModel, accent: Color) {
+    val visibleBands = remember(state.bands, state.bandCount) {
+        if (state.bandCount == 32) state.bands.mapIndexed { index, band ->
+            StudioGraphicBand(index, studioFormatHz(band.frequencyHz))
+        } else studioGraphicBands(state.bands, state.bandCount)
     }
-}
-
-@Composable
-private fun StudioGraphicBands(state: EqUiState, viewModel: EqViewModel, accent: Color) {
-    val bands = remember(state.bands, state.bandCount) { studioGraphicBands(state.bands, state.bandCount) }
     val scroll = rememberScrollState()
-    Row(Modifier.fillMaxSize().padding(start = 7.dp, end = 7.dp, top = 3.dp, bottom = 5.dp)) {
-        StudioGainFader(
-            value = state.preampGainDb, label = "PRE", accent = accent, selected = false, compact = false,
-            modifier = Modifier.width(39.dp).fillMaxHeight(), onValueChange = viewModel::setPreampGain
-        )
-        Box(Modifier.padding(horizontal = 3.dp, vertical = 10.dp).width(1.dp).fillMaxHeight().background(StudioLine))
-        Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(scroll)) {
-            Box(
-                Modifier.width((bands.size * 31).dp).fillMaxHeight().clip(RoundedCornerShape(12.dp))
-                    .background(Brush.verticalGradient(listOf(Color(0xFF1B2027), Color(0xFF090B0F))))
-                    .border(1.dp, Color(0xFF242B33), RoundedCornerShape(12.dp))
-            ) {
-                if (state.showCurveOnSliders) {
-                    FrequencyResponseCanvas(
-                        points = state.responsePoints, bands = state.bands, selectedBandIndex = state.selectedBandIndex,
-                        onBandSelected = viewModel::selectBand, accent = accent, modifier = Modifier.fillMaxSize(),
-                        interactive = false, showGrid = true
-                    )
-                }
-                Row(Modifier.fillMaxSize().padding(horizontal = 1.dp)) {
-                    bands.forEach { item ->
-                        val band = state.bands.getOrNull(item.index) ?: return@forEach
-                        StudioGainFader(
-                            value = band.gainDb, label = item.label, accent = accent,
-                            selected = item.index == state.selectedBandIndex, compact = true,
-                            modifier = Modifier.width(31.dp).fillMaxHeight(),
-                            onValueChange = { viewModel.selectBand(item.index); viewModel.setBandGain(item.index, it) }
-                        )
-                    }
-                }
-            }
+    Row(Modifier.fillMaxSize().padding(start = 5.dp, end = 5.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(
+            Modifier.width(45.dp).fillMaxHeight().clip(RoundedCornerShape(13.dp)).background(Color(0xFF111419))
+                .border(1.dp, Color(0xFF292F37), RoundedCornerShape(13.dp)).padding(horizontal = 2.dp, vertical = 5.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("PRE", color = StudioMuted, fontSize = 7.sp, fontWeight = FontWeight.Black)
+            StudioGainFader(
+                value = state.preampGainDb, label = "PREAMP", accent = StudioBlue, selected = false,
+                compact = false, modifier = Modifier.weight(1f).fillMaxWidth(), onValueChange = viewModel::setPreampGain
+            )
+            Text(String.format(Locale.US, "%+.1f", state.preampGainDb), color = StudioText, fontSize = 7.sp, fontWeight = FontWeight.Bold)
         }
-    }
-}
-
-@Composable
-private fun StudioParametricBands(state: EqUiState, viewModel: EqViewModel, accent: Color) {
-    val density = LocalDensity.current
-    val initial = remember(state.selectedBandIndex, density) { (state.selectedBandIndex * 178f * density.density).toInt() }
-    val scroll = rememberScrollState(initial)
-    Row(Modifier.fillMaxSize().padding(start = 7.dp, end = 7.dp, top = 3.dp, bottom = 5.dp)) {
-        StudioGainFader(
-            value = state.preampGainDb, label = "PRE", accent = accent, selected = false, compact = false,
-            modifier = Modifier.width(39.dp).fillMaxHeight(), onValueChange = viewModel::setPreampGain
-        )
-        Box(Modifier.padding(horizontal = 3.dp, vertical = 10.dp).width(1.dp).fillMaxHeight().background(StudioLine))
+        Spacer(Modifier.width(4.dp))
         Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            state.bands.forEachIndexed { index, band ->
-                StudioBandEditor(
-                    index = index, band = band, selected = index == state.selectedBandIndex, accent = accent,
-                    modifier = Modifier.width(174.dp).fillMaxHeight(),
-                    onSelect = { viewModel.selectBand(index) },
-                    onGain = { viewModel.selectBand(index); viewModel.setBandGain(index, it) },
-                    onFrequency = { viewModel.selectBand(index); viewModel.setBandFrequency(index, it) },
-                    onQ = { viewModel.selectBand(index); viewModel.setBandQ(index, it) },
-                    onFilter = { viewModel.selectBand(index); viewModel.setBandFilterType(index, it) },
-                    onEnabled = { viewModel.setBandEnabled(index, it) }
+            visibleBands.forEach { item ->
+                val band = state.bands.getOrNull(item.index) ?: return@forEach
+                StudioBandPanel(
+                    index = item.index, band = band, selected = item.index == state.selectedBandIndex,
+                    modifier = Modifier.width(194.dp).fillMaxHeight(),
+                    onSelect = { viewModel.selectBand(item.index) },
+                    onGain = { viewModel.setBandGain(item.index, it) },
+                    onFrequency = { viewModel.setBandFrequency(item.index, it) },
+                    onQ = { viewModel.setBandQ(item.index, it) },
+                    onFilter = { viewModel.setBandFilterType(item.index, it) },
+                    onEnabled = { viewModel.setBandEnabled(item.index, it) }
                 )
             }
+            StudioBandSelectorPanel(state, accent, { viewModel.setBandCount(32); viewModel.selectBand(it) }, { viewModel.setBandCount(32) })
         }
     }
 }
 
 @Composable
-private fun StudioBandEditor(
-    index: Int, band: EqBandUiState, selected: Boolean, accent: Color, modifier: Modifier,
+private fun StudioBandPanel(
+    index: Int, band: EqBandUiState, selected: Boolean, modifier: Modifier,
     onSelect: () -> Unit, onGain: (Float) -> Unit, onFrequency: (Float) -> Unit,
     onQ: (Float) -> Unit, onFilter: (Int) -> Unit, onEnabled: (Boolean) -> Unit
 ) {
-    val tint = when (index % 4) {
-        0 -> Color(0xFF274A78)
-        1 -> Color(0xFF24583F)
-        2 -> Color(0xFF71404B)
-        else -> Color(0xFF51427C)
-    }
-    val edge = if (selected) accent else tint
+    val palette = listOf(
+        Color(0xFF999B32), Color(0xFF173D9F), Color(0xFF078F3D),
+        Color(0xFF9A3F4A), Color(0xFF08748B), Color(0xFF63419B), Color(0xFF9A5C24)
+    )
+    val panelColor = palette[index % palette.size]
+    val edge = if (selected) Color(0xFFFFF2CE) else Color(0xFF111419)
     Column(
-        modifier.clip(RoundedCornerShape(15.dp))
-            .background(Brush.verticalGradient(listOf(tint.copy(alpha = if (selected) 0.58f else 0.34f), Color(0xFF171A20), Color(0xFF0B0D11))))
-            .border(if (selected) 1.4.dp else 0.7.dp, edge.copy(alpha = if (selected) 0.9f else 0.4f), RoundedCornerShape(15.dp))
-            .clickable(onClick = onSelect).padding(horizontal = 6.dp, vertical = 6.dp)
+        modifier = modifier.clip(RoundedCornerShape(20.dp)).background(panelColor)
+            .border(if (selected) 1.5.dp else 0.7.dp, edge.copy(alpha = if (selected) 0.88f else 0.35f), RoundedCornerShape(20.dp))
+            .clickable(onClick = onSelect).padding(horizontal = 7.dp, vertical = 7.dp)
     ) {
-        Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("BAND ${index + 1}", color = StudioText, fontSize = 8.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
-            Box(Modifier.size(7.dp).clip(CircleShape).background(if (band.enabled) accent else StudioMuted).clickable { onEnabled(!band.enabled) })
+        Row(Modifier.fillMaxWidth().height(38.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(String.format(Locale.US, "%02d", index + 1), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+            StudioBlackPill("L+R", Modifier, onClick = onSelect)
+            Spacer(Modifier.width(4.dp))
+            StudioBlackPill(studioFilterShort(band.filterType), Modifier) {
+                onFilter(when (band.filterType) {
+                    NativeDspBridge.FILTER_PEAKING -> NativeDspBridge.FILTER_LOW_SHELF
+                    NativeDspBridge.FILTER_LOW_SHELF -> NativeDspBridge.FILTER_HIGH_SHELF
+                    else -> NativeDspBridge.FILTER_PEAKING
+                })
+            }
         }
-
-        Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             StudioGainFader(
-                value = band.gainDb, label = "GAIN", accent = if (selected) accent else StudioRed,
-                selected = selected, compact = false, modifier = Modifier.width(42.dp).fillMaxHeight(), onValueChange = onGain
+                value = band.gainDb, label = "GAIN", accent = StudioRed, selected = selected, compact = false,
+                modifier = Modifier.width(53.dp).fillMaxHeight(), onTouchStart = onSelect, onValueChange = onGain
             )
             Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
-                Box(
-                    Modifier.clip(RoundedCornerShape(7.dp)).background(Color(0xFF080A0D))
-                        .border(1.dp, edge.copy(alpha = 0.55f), RoundedCornerShape(7.dp))
-                        .clickable {
-                            onFilter(when (band.filterType) {
-                                NativeDspBridge.FILTER_PEAKING -> NativeDspBridge.FILTER_LOW_SHELF
-                                NativeDspBridge.FILTER_LOW_SHELF -> NativeDspBridge.FILTER_HIGH_SHELF
-                                else -> NativeDspBridge.FILTER_PEAKING
-                            })
-                        }.padding(horizontal = 7.dp, vertical = 5.dp)
-                ) {
-                    Text(studioFilterName(band.filterType), color = edge, fontSize = 7.sp, fontWeight = FontWeight.Black)
-                }
-
                 RotaryKnob(
-                    label = "Q FACTOR", value = studioQProgress(band.qFactor), valueRange = 0f..1f,
+                    label = "Q", value = studioQProgress(band.qFactor), valueRange = 0f..1f,
                     defaultValue = studioQProgress(1f), valueText = String.format(Locale.US, "%.2f", band.qFactor),
-                    onValueChange = { onQ(studioProgressQ(it)) }, accent = StudioRed, knobSize = 65.dp, modifier = Modifier.fillMaxWidth()
+                    onValueChange = { onQ(studioProgressQ(it)) }, onInteractionStart = onSelect,
+                    accent = StudioRed, knobSize = 82.dp, modifier = Modifier.fillMaxWidth()
                 )
-
                 RotaryKnob(
-                    label = "FREQUENCY", value = studioFrequencyProgress(band.frequencyHz), valueRange = 0f..1f,
+                    label = "FREQ", value = studioFrequencyProgress(band.frequencyHz), valueRange = 0f..1f,
                     defaultValue = studioFrequencyProgress(1_000f), valueText = studioFormatHz(band.frequencyHz),
-                    onValueChange = { onFrequency(studioProgressFrequency(it)) }, accent = StudioBlue, knobSize = 65.dp, modifier = Modifier.fillMaxWidth()
+                    onValueChange = { onFrequency(studioProgressFrequency(it)) }, onInteractionStart = onSelect,
+                    accent = Color(0xFFE3E9EF), knobSize = 82.dp, modifier = Modifier.fillMaxWidth()
                 )
             }
         }
+        Row(Modifier.fillMaxWidth().height(43.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            StudioValueBadge("GAIN", String.format(Locale.US, "%+.1f", band.gainDb))
+            StudioValueBadge("FREQ", studioFormatHz(band.frequencyHz))
+            Box(Modifier.size(22.dp).clip(CircleShape).background(if (band.enabled) Color(0xFF101418) else Color(0xFF4B5156)).clickable { onEnabled(!band.enabled) }, contentAlignment = Alignment.Center) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (band.enabled) Color(0xFF60E99A) else StudioMuted))
+            }
+        }
+    }
+}
 
-        Row(
-            Modifier.fillMaxWidth().height(24.dp).clip(RoundedCornerShape(7.dp)).background(Color(0xFF080A0D))
-                .padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(String.format(Locale.US, "%+.1f dB", band.gainDb), color = StudioText, fontSize = 7.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Text(studioFormatHz(band.frequencyHz), color = StudioMuted, fontSize = 7.sp, fontWeight = FontWeight.Bold)
+@Composable
+private fun StudioBandSelectorPanel(state: EqUiState, accent: Color, onSelect: (Int) -> Unit, onShowAll: () -> Unit) {
+    var menu by rememberSaveable { mutableStateOf(false) }
+    Column(
+        Modifier.width(132.dp).fillMaxHeight().clip(RoundedCornerShape(18.dp)).background(Color(0xFF0C0F13))
+            .border(1.dp, Color(0xFF29313A), RoundedCornerShape(18.dp)).padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+    ) {
+        Text("FILTERS", color = StudioText, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+        Spacer(Modifier.height(10.dp))
+        StudioActionPill("+ ALL BANDS", accent, Modifier.fillMaxWidth(), onShowAll)
+        Spacer(Modifier.height(8.dp))
+        Box {
+            StudioActionPill("SELECT", accent, Modifier.fillMaxWidth()) { menu = true }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                state.bands.forEachIndexed { index, band ->
+                    DropdownMenuItem(
+                        text = { Text("Band ${index + 1} · ${studioFormatHz(band.frequencyHz)}") },
+                        onClick = { menu = false; onSelect(index) }
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("${state.bands.count { it.enabled }} ACTIVE", color = StudioMuted, fontSize = 7.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun StudioBlackPill(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF080A0D))
+            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick).padding(horizontal = 9.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) { Text(label, color = Color.White, fontSize = 7.sp, fontWeight = FontWeight.Black, maxLines = 1) }
+}
+
+@Composable
+private fun StudioValueBadge(label: String, value: String) {
+    Column(Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF080A0D)).padding(horizontal = 7.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, color = Color.White, fontSize = 7.sp, fontWeight = FontWeight.Black)
+        Text(value, color = Color(0xFFC4CBD3), fontSize = 7.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+@Composable
+private fun StudioEqActionRack(
+    state: EqUiState, accent: Color, viewModel: EqViewModel,
+    onSave: () -> Unit, onImport: () -> Unit, onReset: () -> Unit
+) {
+    var modeMenu by rememberSaveable { mutableStateOf(false) }
+    var presetMenu by rememberSaveable { mutableStateOf(false) }
+    var moreMenu by rememberSaveable { mutableStateOf(false) }
+    val selectedPreset = state.presets.firstOrNull { it.presetId == state.selectedPresetId }?.presetName ?: "Flat"
+    Row(Modifier.fillMaxWidth().height(71.dp).padding(horizontal = 10.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.width(62.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box {
+                StudioActionPill("EQ", accent, Modifier.fillMaxWidth()) { modeMenu = true }
+                DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
+                    DropdownMenuItem(text = { Text("10-band") }, onClick = { modeMenu = false; viewModel.setBandCount(10) })
+                    DropdownMenuItem(text = { Text("15-band") }, onClick = { modeMenu = false; viewModel.setBandCount(15) })
+                    DropdownMenuItem(text = { Text("Parametric 32") }, onClick = { modeMenu = false; viewModel.setBandCount(32) })
+                }
+            }
+            StudioActionPill(if (state.limiterEnabled) "LIMIT ✓" else "LIMIT", if (state.limiterEnabled) accent else StudioMuted, Modifier.fillMaxWidth()) {
+                viewModel.setLimiterEnabled(!state.limiterEnabled)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.weight(1f)) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(Color(0xFF101318))
+                    .border(1.dp, Color(0xFF5A6068), RoundedCornerShape(26.dp)).clickable { presetMenu = true }
+                    .padding(vertical = 10.dp, horizontal = 9.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(selectedPreset.uppercase(Locale.US), color = StudioText, fontSize = 10.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("PRESET  ▾", color = StudioMuted, fontSize = 6.sp, letterSpacing = 1.sp)
+            }
+            DropdownMenu(expanded = presetMenu, onDismissRequest = { presetMenu = false }) {
+                state.presets.forEach { preset ->
+                    DropdownMenuItem(text = { Text(preset.presetName) }, onClick = { presetMenu = false; viewModel.applyPreset(preset) })
+                }
+            }
+        }
+        Box {
+            Text("⋮", color = StudioText, fontSize = 23.sp, modifier = Modifier.clickable { moreMenu = true }.padding(horizontal = 10.dp))
+            DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                DropdownMenuItem(text = { Text("Save preset") }, onClick = { moreMenu = false; onSave() })
+                DropdownMenuItem(text = { Text("Import AutoEQ") }, onClick = { moreMenu = false; onImport() })
+                DropdownMenuItem(text = { Text("Reset equalizer") }, onClick = { moreMenu = false; onReset() })
+            }
+        }
+    }
+}
+
+@Composable
+private fun StudioActionPill(label: String, tint: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.height(29.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xFF191D22))
+            .border(1.dp, Color(0xFF333A43), RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(horizontal = 7.dp),
+        contentAlignment = Alignment.Center
+    ) { Text(label, color = tint, fontSize = 8.sp, fontWeight = FontWeight.Black, maxLines = 1) }
+}
+
+@Composable
+private fun StudioPlayerBadge(state: EqUiState) {
+    Row(Modifier.fillMaxWidth().height(25.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF111419)).padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(5.dp).background(if (state.activePlayerName == "No player detected") StudioMuted else Color(0xFF51D890), CircleShape))
+            Text(studioPlayerName(state.activePlayerName), color = if (state.activePlayerName == "No player detected") StudioMuted else StudioText, fontSize = 7.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp, modifier = Modifier.padding(start = 5.dp))
         }
     }
 }
 
 @Composable
 private fun StudioGainFader(
-    value: Float,
-    label: String,
-    accent: Color,
-    selected: Boolean,
-    compact: Boolean,
-    modifier: Modifier,
-    onValueChange: (Float) -> Unit
+    value: Float, label: String, accent: Color, selected: Boolean, compact: Boolean,
+    modifier: Modifier, onTouchStart: () -> Unit = {}, onValueChange: (Float) -> Unit
 ) {
     val callback = rememberUpdatedState(onValueChange)
     val local = remember { mutableFloatStateOf(value) }
@@ -393,16 +440,13 @@ private fun StudioGainFader(
     val min = -12f
     val max = 12f
     val range = max - min
-
     Column(modifier.padding(horizontal = if (compact) 0.dp else 1.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(String.format(Locale.US, "%+.1f", local.floatValue), color = if (selected) accent else StudioText, fontSize = if (compact) 6.sp else 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
         Canvas(
             Modifier.weight(1f).fillMaxWidth()
                 .pointerInput(Unit) {
                     var lastDispatch = 0L
-                    fun valueAt(y: Float): Float =
-                        (min + (1f - y / size.height.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f) * range)
-                            .coerceIn(min, max)
+                    fun valueAt(y: Float): Float = (min + (1f - y / size.height.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f) * range).coerceIn(min, max)
                     fun dispatch(force: Boolean = false) {
                         val now = SystemClock.uptimeMillis()
                         if (force || lastDispatch == 0L || now - lastDispatch >= 16L) {
@@ -411,28 +455,16 @@ private fun StudioGainFader(
                         }
                     }
                     detectDragGestures(
-                        onDragStart = { p ->
-                            dragging.value = true
-                            lastDispatch = 0L
-                            local.floatValue = valueAt(p.y)
-                            dispatch()
-                        },
-                        onDrag = { change, _ ->
-                            change.consume()
-                            local.floatValue = valueAt(change.position.y)
-                            dispatch()
-                        },
+                        onDragStart = { p -> dragging.value = true; onTouchStart(); lastDispatch = 0L; local.floatValue = valueAt(p.y); dispatch() },
+                        onDrag = { change, _ -> change.consume(); local.floatValue = valueAt(change.position.y); dispatch() },
                         onDragEnd = { dispatch(force = true); dragging.value = false },
                         onDragCancel = { dispatch(force = true); dragging.value = false }
                     )
                 }
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onTap = { p ->
-                            local.floatValue = min + (1f - p.y / size.height.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f) * range
-                            callback.value(local.floatValue)
-                        },
-                        onDoubleTap = { local.floatValue = 0f; callback.value(0f) }
+                        onTap = { p -> onTouchStart(); local.floatValue = min + (1f - p.y / size.height.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f) * range; callback.value(local.floatValue) },
+                        onDoubleTap = { onTouchStart(); local.floatValue = 0f; callback.value(0f) }
                     )
                 }
         ) {
@@ -441,24 +473,20 @@ private fun StudioGainFader(
             val usable = (bottom - top).coerceAtLeast(1f)
             val center = size.width * 0.5f
             val valueFraction = ((local.floatValue - min) / range).coerceIn(0f, 1f)
-            val zeroFraction = 0.5f
             val yValue = bottom - valueFraction * usable
-            val yZero = bottom - zeroFraction * usable
+            val yZero = bottom - 0.5f * usable
             val track = if (compact) 2.dp.toPx() else 3.dp.toPx()
             val capWidth = (size.width * 0.78f).coerceAtLeast(if (compact) 17.dp.toPx() else 24.dp.toPx())
             val capHeight = if (compact) 9.dp.toPx() else 15.dp.toPx()
-
             drawLine(Color(0xFF353C45), Offset(center, top), Offset(center, bottom), track, StrokeCap.Round)
             drawLine(Color(0xFF7C8793).copy(alpha = 0.48f), Offset(center - 7.dp.toPx(), yZero), Offset(center + 7.dp.toPx(), yZero), 0.8.dp.toPx())
             drawLine(accent.copy(alpha = 0.19f), Offset(center, yZero), Offset(center, yValue), if (selected) 8.dp.toPx() else 5.dp.toPx(), StrokeCap.Round)
             drawLine(accent.copy(alpha = if (selected) 0.95f else 0.65f), Offset(center, yZero), Offset(center, yValue), track, StrokeCap.Round)
-
             for (tick in 0..12) {
                 val y = top + usable * tick / 12f
-                val tickLength = if (tick % 3 == 0) 5.dp.toPx() else 2.5.dp.toPx()
-                drawLine(Color(0xFF89939E).copy(alpha = if (tick % 3 == 0) 0.58f else 0.25f), Offset(center + 4.dp.toPx(), y), Offset(center + 4.dp.toPx() + tickLength, y), 0.7.dp.toPx())
+                val length = if (tick % 3 == 0) 5.dp.toPx() else 2.5.dp.toPx()
+                drawLine(Color(0xFF89939E).copy(alpha = if (tick % 3 == 0) 0.58f else 0.25f), Offset(center + 4.dp.toPx(), y), Offset(center + 4.dp.toPx() + length, y), 0.7.dp.toPx())
             }
-
             val capTop = yValue - capHeight / 2f
             drawRoundRect(Color.Black.copy(alpha = 0.45f), Offset(center - capWidth / 2f, capTop + 1.5.dp.toPx()), Size(capWidth, capHeight + 1.dp.toPx()), CornerRadius(capHeight / 2f))
             drawRoundRect(Brush.verticalGradient(listOf(Color(0xFFF0F3F5), Color(0xFF9DA7B1), Color(0xFF414A54))), Offset(center - capWidth / 2f, capTop), Size(capWidth, capHeight), CornerRadius(capHeight / 2f))
@@ -472,27 +500,20 @@ private fun StudioGainFader(
 @Composable
 private fun StudioSpectrumStrip(state: EqUiState, accent: Color, onToggle: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().height(59.dp).padding(horizontal = 10.dp, vertical = 4.dp)
+        Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp, vertical = 3.dp)
             .clip(RoundedCornerShape(11.dp)).background(Color(0xFF171A1F))
             .border(1.dp, Color(0xFF303740), RoundedCornerShape(11.dp)),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            Modifier.width(79.dp).fillMaxHeight().clickable(onClick = onToggle).padding(start = 8.dp),
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text("SPECTRUM", color = StudioText, fontSize = 7.sp, fontWeight = FontWeight.Black, letterSpacing = 0.6.sp)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(5.dp).background(if (state.visualizerEnabled) Color(0xFF53DC96) else StudioMuted, CircleShape))
-                Text(if (state.visualizerEnabled) "LIVE" else "OFF", color = if (state.visualizerEnabled) Color(0xFF53DC96) else StudioMuted, fontSize = 6.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 4.dp))
-            }
+        Column(Modifier.width(76.dp).fillMaxHeight().clickable(onClick = onToggle).padding(start = 7.dp), verticalArrangement = Arrangement.Center) {
+            Text("VISUALIZER", color = StudioText, fontSize = 7.sp, fontWeight = FontWeight.Black)
+            Text(if (state.visualizerEnabled) "LIVE  ●" else "ENABLE", color = if (state.visualizerEnabled) Color(0xFF53DC96) else StudioMuted, fontSize = 6.sp, fontWeight = FontWeight.Bold)
         }
         Box(Modifier.weight(1f).fillMaxHeight().padding(end = 5.dp).clip(RoundedCornerShape(8.dp))) {
             FrequencyResponseCanvas(
                 points = state.responsePoints, bands = state.bands, selectedBandIndex = state.selectedBandIndex,
                 onBandSelected = {}, spectrumBars = if (state.visualizerEnabled) state.spectrumBars else emptyList(),
-                accent = accent, modifier = Modifier.fillMaxSize(), interactive = false,
-                spectrumStyle = state.visualizerStyle, showGrid = false
+                accent = accent, modifier = Modifier.fillMaxSize(), interactive = false, spectrumStyle = state.visualizerStyle, showGrid = false
             )
         }
     }
@@ -500,22 +521,24 @@ private fun StudioSpectrumStrip(state: EqUiState, accent: Color, onToggle: () ->
 
 @Composable
 private fun StudioBassTrebleRow(state: EqUiState, viewModel: EqViewModel) {
-    Row(
-        Modifier.fillMaxWidth().height(141.dp).padding(horizontal = 12.dp, vertical = 3.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    Row(Modifier.fillMaxWidth().height(139.dp).padding(horizontal = 8.dp, vertical = 2.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         RotaryKnob(
-            label = "BASS", value = ((state.bassGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f,
-            defaultValue = 0.5f, valueText = String.format(Locale.US, "%+.1f dB", state.bassGainDb),
-            onValueChange = { viewModel.setBassGain(it * 24f - 12f) }, accent = StudioRed, knobSize = 109.dp, modifier = Modifier.weight(1f)
+            label = "BASS", value = ((state.bassGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f, defaultValue = 0.5f,
+            valueText = "${((state.bassGainDb + 12f) / 24f * 200f).toInt()}%", onValueChange = { viewModel.setBassGain(it * 24f - 12f) },
+            accent = StudioRed, knobSize = 108.dp, modifier = Modifier.weight(1f)
         )
         RotaryKnob(
-            label = "TREBLE", value = ((state.trebleGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f,
-            defaultValue = 0.5f, valueText = String.format(Locale.US, "%+.1f dB", state.trebleGainDb),
-            onValueChange = { viewModel.setTrebleGain(it * 24f - 12f) }, accent = StudioBlue, knobSize = 109.dp, modifier = Modifier.weight(1f)
+            label = "TREBLE", value = ((state.trebleGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f, defaultValue = 0.5f,
+            valueText = "${((state.trebleGainDb + 12f) / 24f * 200f).toInt()}%", onValueChange = { viewModel.setTrebleGain(it * 24f - 12f) },
+            accent = StudioRed, knobSize = 108.dp, modifier = Modifier.weight(1f)
         )
     }
+}
+
+private fun studioFilterShort(type: Int): String = when (type) {
+    NativeDspBridge.FILTER_LOW_SHELF -> "LOW"
+    NativeDspBridge.FILTER_HIGH_SHELF -> "HIGH"
+    else -> "PEAK"
 }
 
 @Composable
