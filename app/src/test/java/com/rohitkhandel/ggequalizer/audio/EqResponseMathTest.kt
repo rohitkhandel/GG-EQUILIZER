@@ -5,6 +5,7 @@ import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_LOW_SHELF
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_PEAKING
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import kotlin.math.pow
 import org.junit.Test
 
 class EqResponseMathTest {
