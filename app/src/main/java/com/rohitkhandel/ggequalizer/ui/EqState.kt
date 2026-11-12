@@ -35,7 +35,7 @@ data class EqUiState(
     val trebleGainDb: Float = 0.0f,
     val limiterEnabled: Boolean = true,
     val limiterThresholdDb: Float = -1.0f,
-    val limiterReleaseMs: Float = 80.0f,
+    val limiterReleaseMs: Float = 60.0f,
     val stereoWidthPercent: Float = 100.0f,
     val stereoBalance: Float = 0.0f,
     val dvcEnabled: Boolean = false,

@@ -102,17 +102,9 @@ class DvcManager(context: Context) {
     }
 
     private fun recomputeCompensation() {
-        val positiveBandBoostDb = profile.bands
-            .filter { it.enabled }
-            .sumOf { it.gainDb.coerceAtLeast(0.0f).toDouble() }
-            .toFloat()
-        val positiveToneBoostDb =
-            profile.bassGainDb.coerceAtLeast(0.0f) +
-                profile.trebleGainDb.coerceAtLeast(0.0f)
-        val positivePreampDb = profile.preampGainDb.coerceAtLeast(0.0f)
-        val requestedBoostDb =
-            positiveBandBoostDb + positiveToneBoostDb + positivePreampDb
-
+        // Reserve only the estimated peak of the combined response, not the
+        // arithmetic sum of every positive band (which caused weak output).
+        val requestedBoostDb = GlobalEqController.estimatedPeakBoostDb()
         val compensationDb = if (dvcEnabled) {
             -requestedBoostDb.coerceIn(0.0f, MAX_SOFTWARE_COMPENSATION_DB)
         } else {
@@ -140,13 +132,7 @@ class DvcManager(context: Context) {
             (20.0 * log10(fraction.toDouble())).toFloat().coerceIn(-80.0f, 0.0f)
         }
 
-        val boostDb = profile.bands
-            .filter { it.enabled }
-            .sumOf { it.gainDb.coerceAtLeast(0.0f).toDouble() }
-            .toFloat() +
-            profile.bassGainDb.coerceAtLeast(0.0f) +
-            profile.trebleGainDb.coerceAtLeast(0.0f) +
-            profile.preampGainDb.coerceAtLeast(0.0f)
+        val boostDb = GlobalEqController.estimatedPeakBoostDb()
 
         val compensation = if (dvcEnabled) {
             -boostDb.coerceIn(0.0f, MAX_SOFTWARE_COMPENSATION_DB)

@@ -61,6 +61,7 @@ class AdvancedDumpTracker(
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var pollingJob: Job? = null
+    private var refreshJob: Job? = null
 
     @Volatile
     private var stopped = false
@@ -78,6 +79,24 @@ class AdvancedDumpTracker(
                     }
                 }
                 delay(POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    /**
+     * Trigger a single immediate snapshot after AudioManager reports a
+     * playback-configuration change. A single in-flight refresh is allowed.
+     */
+    @Synchronized
+    fun refreshNow() {
+        if (stopped || refreshJob?.isActive == true) return
+        refreshJob = scope.launch {
+            val snapshot = collectSnapshot()
+            handler.post {
+                if (!stopped) {
+                    runCatching { onSnapshot(snapshot) }
+                        .onFailure { Log.w(TAG, "Tracker callback failed", it) }
+                }
             }
         }
     }

@@ -1,10 +1,14 @@
 package com.rohitkhandel.ggequalizer.ui.components
 
+import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -15,8 +19,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 
 /**
- * A purpose-built vertical EQ fader. Its gesture coroutine is keyed only by
- * the range, not the changing value, so value updates cannot cancel a drag.
+ * Vertical graphic-EQ fader. The local float state redraws this Canvas at input
+ * rate; shared state / DSP changes are dispatched at most once per 20 ms.
  */
 @Composable
 fun BandSlider(
@@ -27,30 +31,52 @@ fun BandSlider(
     accent: Color,
     modifier: Modifier = Modifier
 ) {
-    val latestOnValueChange by rememberUpdatedState(onValueChange)
+    val latestOnValueChange = rememberUpdatedState(onValueChange)
+    val localValue = remember { mutableFloatStateOf(value) }
+    val dragging = remember { mutableStateOf(false) }
     val range = (valueRange.endInclusive - valueRange.start).coerceAtLeast(0.0001f)
-    val normalized = ((value - valueRange.start) / range).coerceIn(0f, 1f)
+
+    LaunchedEffect(value) {
+        if (!dragging.value) localValue.floatValue = value
+    }
 
     Canvas(
         modifier = modifier.pointerInput(valueRange) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
+                dragging.value = true
+                var lastDispatchMs = 0L
+
                 fun updateFromY(y: Float) {
                     val fraction = (1f - y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f)
-                    latestOnValueChange(valueRange.start + fraction * range)
+                    val next = (valueRange.start + fraction * range)
+                        .coerceIn(valueRange.start, valueRange.endInclusive)
+                    localValue.floatValue = next
+                    val now = SystemClock.uptimeMillis()
+                    if (lastDispatchMs == 0L || now - lastDispatchMs >= UPDATE_INTERVAL_MS) {
+                        latestOnValueChange.value(next)
+                        lastDispatchMs = now
+                    }
                 }
-                updateFromY(down.position.y)
-                var pressed = true
-                while (pressed) {
-                    val event = awaitPointerEvent()
-                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                    if (change.pressed) updateFromY(change.position.y)
-                    change.consume()
-                    pressed = change.pressed
+
+                try {
+                    updateFromY(down.position.y)
+                    var pressed = true
+                    while (pressed) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (change.pressed) updateFromY(change.position.y)
+                        change.consume()
+                        pressed = change.pressed
+                    }
+                } finally {
+                    latestOnValueChange.value(localValue.floatValue)
+                    dragging.value = false
                 }
             }
         }
     ) {
+        val normalized = ((localValue.floatValue - valueRange.start) / range).coerceIn(0f, 1f)
         val centerX = size.width * 0.5f
         val top = 7.dp.toPx()
         val bottom = size.height - 7.dp.toPx()
@@ -104,3 +130,5 @@ fun BandSlider(
         )
     }
 }
+
+private const val UPDATE_INTERVAL_MS = 20L

@@ -1,5 +1,6 @@
 package com.rohitkhandel.ggequalizer.ui.components
 
+import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -9,7 +10,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,9 +44,15 @@ fun RotaryKnob(
     accent: Color = Color(0xFF43D9F5)
 ) {
     val range = max(0.0001f, valueRange.endInclusive - valueRange.start)
-    val normalized = ((value - valueRange.start) / range).coerceIn(0f, 1f)
-    val latestValue by rememberUpdatedState(value)
-    val latestOnValueChange by rememberUpdatedState(onValueChange)
+    val localValue = remember { mutableFloatStateOf(value) }
+    val dragging = remember { mutableStateOf(false) }
+    val latestOnValueChange = rememberUpdatedState(onValueChange)
+
+    LaunchedEffect(value) {
+        if (!dragging.value) localValue.floatValue = value
+    }
+
+    val normalized = ((localValue.floatValue - valueRange.start) / range).coerceIn(0f, 1f)
 
     Column(
         modifier = modifier,
@@ -55,21 +65,43 @@ fun RotaryKnob(
                 .pointerInput(valueRange, defaultValue) {
                     var startValue = valueRange.start
                     var accumulatedDrag = 0f
+                    var lastDispatchMs = 0L
                     detectDragGestures(
                         onDragStart = {
-                            startValue = latestValue
+                            dragging.value = true
+                            startValue = localValue.floatValue
                             accumulatedDrag = 0f
+                            lastDispatchMs = 0L
                         },
                         onDrag = { change, dragAmount ->
                             change.consume()
                             accumulatedDrag -= dragAmount.y
-                            val next = startValue + (accumulatedDrag / 210f) * range
-                            latestOnValueChange(next.coerceIn(valueRange.start, valueRange.endInclusive))
+                            val next = (startValue + (accumulatedDrag / 210f) * range)
+                                .coerceIn(valueRange.start, valueRange.endInclusive)
+                            localValue.floatValue = next
+                            val now = SystemClock.uptimeMillis()
+                            if (lastDispatchMs == 0L || now - lastDispatchMs >= UPDATE_INTERVAL_MS) {
+                                latestOnValueChange.value(next)
+                                lastDispatchMs = now
+                            }
+                        },
+                        onDragEnd = {
+                            latestOnValueChange.value(localValue.floatValue)
+                            dragging.value = false
+                        },
+                        onDragCancel = {
+                            latestOnValueChange.value(localValue.floatValue)
+                            dragging.value = false
                         }
                     )
                 }
                 .pointerInput(defaultValue) {
-                    detectTapGestures(onDoubleTap = { latestOnValueChange(defaultValue) })
+                    detectTapGestures(
+                        onDoubleTap = {
+                            localValue.floatValue = defaultValue
+                            latestOnValueChange.value(defaultValue)
+                        }
+                    )
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -115,3 +147,5 @@ fun RotaryKnob(
         Text(label.uppercase(), color = Color(0xFFB9C7D8), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
     }
 }
+
+private const val UPDATE_INTERVAL_MS = 20L

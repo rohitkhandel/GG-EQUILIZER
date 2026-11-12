@@ -21,10 +21,11 @@ import kotlinx.coroutines.flow.collect
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,11 +47,16 @@ import kotlin.math.sqrt
  * filter coefficient equations as the C++ biquad implementation.
  */
 class EqViewModel(application: Application) : AndroidViewModel(application) {
+    private companion object {
+        const val AUDIO_UPDATE_INTERVAL_MS = 20L
+        const val RESPONSE_UPDATE_INTERVAL_MS = 24L
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutableState = MutableStateFlow(EqUiState())
     val uiState: StateFlow<EqUiState> = mutableState.asStateFlow()
 
-    private var responseJob: Job? = null
+    private val audioProfileUpdates = Channel<Unit>(Channel.CONFLATED)
+    private val responseInvalidations = Channel<Unit>(Channel.CONFLATED)
     private val fftAnalyzer = FftAnalyzer(application)
     private val presetDao = EqDatabase.getInstance(application).presetDao()
 
@@ -97,6 +103,29 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
                 mutableState.update { current -> current.copy(presets = presets) }
             }
         }
+        scope.launch(Dispatchers.Default) {
+            var lastApplied = GlobalEqController.currentProfile()
+            for (ignored in audioProfileUpdates) {
+                delay(AUDIO_UPDATE_INTERVAL_MS)
+                while (audioProfileUpdates.tryReceive().isSuccess) {
+                    // Keep only the latest complete UI profile for this interval.
+                }
+                val latest = mutableState.value.toAudioProfile()
+                applyAudioProfileDelta(lastApplied, latest)
+                lastApplied = latest
+            }
+        }
+        scope.launch(Dispatchers.Default) {
+            for (ignored in responseInvalidations) {
+                delay(RESPONSE_UPDATE_INTERVAL_MS)
+                while (responseInvalidations.tryReceive().isSuccess) {
+                    // Collapse rapid pointer events into one response calculation.
+                }
+                val snapshot = mutableState.value
+                val points = EqResponseCalculator.calculate(snapshot)
+                mutableState.update { current -> current.copy(responsePoints = points) }
+            }
+        }
         recalculateResponse()
     }
 
@@ -133,79 +162,68 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
             bands[index] = updated
             current.copy(bands = bands)
         }
-        GlobalEqController.setBand(index, updated.toAudioParameter())
+        audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
     fun setPreampGain(gainDb: Float) {
         val value = gainDb.coerceIn(-24.0f, 12.0f)
         mutableState.update { it.copy(preampGainDb = value) }
-        GlobalEqController.setPreampGain(value)
+        audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
     fun setBassGain(gainDb: Float) {
         val value = gainDb.coerceIn(-12.0f, 12.0f)
         mutableState.update { it.copy(bassGainDb = value) }
-        GlobalEqController.setTone(value, mutableState.value.trebleGainDb)
+        audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
     fun setTrebleGain(gainDb: Float) {
         val value = gainDb.coerceIn(-12.0f, 12.0f)
         mutableState.update { it.copy(trebleGainDb = value) }
-        GlobalEqController.setTone(mutableState.value.bassGainDb, value)
+        audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
     fun setLimiterEnabled(enabled: Boolean) {
         mutableState.update { it.copy(limiterEnabled = enabled) }
-        val state = mutableState.value
-        GlobalEqController.setLimiter(
-            enabled,
-            state.limiterThresholdDb,
-            state.limiterReleaseMs
-        )
+        audioProfileUpdates.trySend(Unit)
     }
 
     fun setLimiterThreshold(thresholdDb: Float) {
         val value = thresholdDb.coerceIn(-12.0f, 0.0f)
         mutableState.update { it.copy(limiterThresholdDb = value) }
-        val state = mutableState.value
-        GlobalEqController.setLimiter(
-            state.limiterEnabled,
-            value,
-            state.limiterReleaseMs
-        )
+        audioProfileUpdates.trySend(Unit)
     }
 
     fun setLimiterRelease(releaseMs: Float) {
         val value = releaseMs.coerceIn(10.0f, 300.0f)
         mutableState.update { it.copy(limiterReleaseMs = value) }
-        val state = mutableState.value
-        GlobalEqController.setLimiter(
-            state.limiterEnabled,
-            state.limiterThresholdDb,
-            value
-        )
+        audioProfileUpdates.trySend(Unit)
     }
 
     fun setDvcEnabled(enabled: Boolean) {
-        DvcManager.setGlobalEnabled(enabled)
-        DvcManager.globalSnapshot()?.let { dvcListener(it) }
-            ?: mutableState.update { it.copy(dvcEnabled = enabled) }
+        mutableState.update { it.copy(dvcEnabled = enabled) }
+        scope.launch(Dispatchers.Default) {
+            DvcManager.setGlobalEnabled(enabled)
+            DvcManager.globalSnapshot()?.let { snapshot ->
+                withContext(Dispatchers.Main.immediate) { dvcListener(snapshot) }
+            }
+        }
     }
 
     fun setStereoWidthPercent(widthPercent: Float) {
         val value = widthPercent.coerceIn(0.0f, 200.0f)
         mutableState.update { it.copy(stereoWidthPercent = value) }
-        GlobalEqController.setStereoWidthPercent(value)
+        audioProfileUpdates.trySend(Unit)
     }
 
     fun setStereoBalance(balance: Float) {
         val value = balance.coerceIn(-1.0f, 1.0f)
         mutableState.update { it.copy(stereoBalance = value) }
-        GlobalEqController.setStereoBalance(value)
+        audioProfileUpdates.trySend(Unit)
     }
 
     fun setVisualizerEnabled(enabled: Boolean) {
@@ -257,9 +275,6 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
             stereoWidthPercent = preset.stereoWidthPercent,
             stereoBalance = preset.stereoBalance
         ).sanitized()
-        GlobalEqController.setProfile(profile)
-        DvcManager.setGlobalEnabled(preset.dvcEnabled)
-        DvcManager.globalSnapshot()?.let(dvcListener)
         mutableState.update { current ->
             current.copy(
                 bands = profile.bands.map { band ->
@@ -283,6 +298,10 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
                 selectedPresetId = preset.presetId,
                 presetMessage = "Loaded ${preset.presetName}"
             )
+        }
+        audioProfileUpdates.trySend(Unit)
+        scope.launch(Dispatchers.Default) {
+            DvcManager.setGlobalEnabled(preset.dvcEnabled)
         }
         recalculateResponse()
     }
@@ -369,8 +388,8 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     fun currentAudioProfile(): EqAudioProfile = mutableState.value.toAudioProfile()
 
     fun setMasterEnabled(enabled: Boolean) {
-        GlobalEqController.setMasterEnabled(enabled)
         mutableState.update { it.copy(masterEnabled = enabled) }
+        audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
@@ -384,26 +403,14 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update {
             it.copy(preampGainDb = 0.0f, bassGainDb = 0.0f, trebleGainDb = 0.0f)
         }
-        GlobalEqController.setPreampGain(0.0f)
-        GlobalEqController.setTone(0.0f, 0.0f)
+        audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
     fun resetAllBands() {
         val defaults = EqUiState().bands
         mutableState.update { it.copy(bands = defaults, selectedBandIndex = 15) }
-        GlobalEqController.setProfile(
-            EqAudioProfile(
-                enabled = mutableState.value.masterEnabled,
-                bands = defaults.map(EqBandUiState::toAudioParameter),
-                preampGainDb = mutableState.value.preampGainDb,
-                bassGainDb = mutableState.value.bassGainDb,
-                trebleGainDb = mutableState.value.trebleGainDb,
-                limiterEnabled = mutableState.value.limiterEnabled,
-                limiterThresholdDb = mutableState.value.limiterThresholdDb,
-                limiterReleaseMs = mutableState.value.limiterReleaseMs
-            )
-        )
+        audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
@@ -434,17 +441,55 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun recalculateResponse() {
-        responseJob?.cancel()
-        val state = mutableState.value
-        responseJob = scope.launch {
-            val points = withContext(Dispatchers.Default) {
-                EqResponseCalculator.calculate(state)
-            }
-            mutableState.update { current -> current.copy(responsePoints = points) }
+        responseInvalidations.trySend(Unit)
+    }
+
+    private fun applyAudioProfileDelta(previous: EqAudioProfile, next: EqAudioProfile) {
+        if (previous == next) return
+        val changedBands = next.bands.indices.filter { index ->
+            previous.bands.getOrNull(index) != next.bands.getOrNull(index)
+        }
+
+        // Bulk preset/reset operations use one full profile commit. Single-band
+        // drags update only the changed band and avoid 32 JNI writes per tick.
+        if (changedBands.size > 2 || previous.bands.size != next.bands.size) {
+            GlobalEqController.setProfile(next)
+            return
+        }
+
+        if (previous.enabled != next.enabled) {
+            GlobalEqController.setMasterEnabled(next.enabled)
+        }
+        changedBands.forEach { index ->
+            GlobalEqController.setBand(index, next.bands[index])
+        }
+        if (previous.bassGainDb != next.bassGainDb || previous.trebleGainDb != next.trebleGainDb) {
+            GlobalEqController.setTone(next.bassGainDb, next.trebleGainDb)
+        }
+        if (previous.preampGainDb != next.preampGainDb) {
+            GlobalEqController.setPreampGain(next.preampGainDb)
+        }
+        if (previous.limiterEnabled != next.limiterEnabled ||
+            previous.limiterThresholdDb != next.limiterThresholdDb ||
+            previous.limiterReleaseMs != next.limiterReleaseMs
+        ) {
+            GlobalEqController.setLimiter(
+                next.limiterEnabled,
+                next.limiterThresholdDb,
+                next.limiterReleaseMs
+            )
+        }
+        if (previous.stereoWidthPercent != next.stereoWidthPercent) {
+            GlobalEqController.setStereoWidthPercent(next.stereoWidthPercent)
+        }
+        if (previous.stereoBalance != next.stereoBalance) {
+            GlobalEqController.setStereoBalance(next.stereoBalance)
         }
     }
 
     override fun onCleared() {
+        audioProfileUpdates.close()
+        responseInvalidations.close()
         fftAnalyzer.stop()
         GlobalEqController.removeListener(globalListener)
         DvcManager.removeGlobalListener(dvcListener)

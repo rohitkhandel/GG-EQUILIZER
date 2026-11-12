@@ -83,7 +83,10 @@ fun FrequencyResponseCanvas(
                             activeBand = current.indices.minByOrNull { index ->
                                 abs(ln(current[index].frequencyHz.coerceAtLeast(1f) / frequency.coerceAtLeast(1f)))
                             } ?: -1
-                            if (activeBand >= 0) currentOnBandSelected(activeBand)
+                            if (activeBand >= 0) {
+                                pendingGain = current[activeBand].gainDb
+                                currentOnBandSelected(activeBand)
+                            }
                         },
                         onDrag = { change, _ ->
                             if (activeBand >= 0) {

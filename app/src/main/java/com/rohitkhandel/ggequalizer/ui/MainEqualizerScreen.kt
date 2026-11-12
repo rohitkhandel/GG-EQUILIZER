@@ -39,6 +39,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -153,6 +155,7 @@ fun MainEqualizerScreen(
             activePlayer = state.activePlayerName,
             packageName = state.activePlayerPackage,
             sessionCount = state.activeSessionCount,
+            activeSessionId = state.activeSessionId,
             accent = accent,
             enabled = state.masterEnabled,
             onMasterChanged = viewModel::setMasterEnabled
@@ -236,6 +239,7 @@ private fun TopAudiophileBar(
     activePlayer: String,
     packageName: String?,
     sessionCount: Int,
+    activeSessionId: Int?,
     accent: Color,
     enabled: Boolean,
     onMasterChanged: (Boolean) -> Unit
@@ -290,7 +294,7 @@ private fun TopAudiophileBar(
             Box(
                 modifier = Modifier
                     .size(8.dp)
-                    .background(accent, CircleShape)
+                    .background(Color(0xFF45D483), CircleShape)
             )
             Column(
                 modifier = Modifier
@@ -306,13 +310,21 @@ private fun TopAudiophileBar(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                "$sessionCount SESS",
-                color = accent,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    activeSessionId?.let { "SESSION $it" } ?: "NO SESSION",
+                    color = accent,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    "$sessionCount ATTACHED",
+                    color = MutedText,
+                    fontSize = 8.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
         }
     }
 }
@@ -328,6 +340,9 @@ private fun EqualizerPage(
 ) {
     var multiSelect by rememberSaveable { mutableStateOf(false) }
     var selectedBands by rememberSaveable { mutableStateOf(setOf(state.selectedBandIndex)) }
+    var presetMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    val selectedPresetName = state.presets.firstOrNull { it.presetId == state.selectedPresetId }?.presetName
+        ?: "Current profile"
 
     Column(
         modifier = Modifier
@@ -336,6 +351,30 @@ private fun EqualizerPage(
             .padding(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("PRESET", color = MutedText, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(9.dp))
+            Box {
+                TextButton(onClick = { presetMenuExpanded = true }) {
+                    Text(selectedPresetName, color = accent, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                DropdownMenu(expanded = presetMenuExpanded, onDismissRequest = { presetMenuExpanded = false }) {
+                    state.presets.forEach { preset ->
+                        DropdownMenuItem(
+                            text = { Text(preset.presetName) },
+                            onClick = {
+                                presetMenuExpanded = false
+                                viewModel.applyPreset(preset)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -421,11 +460,14 @@ private fun EqualizerPage(
             contentPadding = PaddingValues(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            itemsIndexed(state.bands) { index, band ->
+            itemsIndexed(
+                items = state.bands,
+                key = { index, band -> "band_${index}_${band.frequencyHz}" }
+            ) { index, band ->
                 val selected = index == state.selectedBandIndex || index in selectedBands
                 Column(
                     modifier = Modifier
-                        .width(48.dp)
+                        .width(64.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (selected) Color(0xFF2B261D) else Surface)
                         .padding(vertical = 7.dp),
@@ -440,7 +482,7 @@ private fun EqualizerPage(
                         fontFamily = FontFamily.Monospace
                     )
                     Box(
-                        modifier = Modifier.size(width = 48.dp, height = 132.dp),
+                        modifier = Modifier.size(width = 64.dp, height = 210.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         BandSlider(
@@ -501,70 +543,81 @@ private fun TonePage(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("TONE & DYNAMICS", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
-        Text("Precision controls with double-tap reset", color = MutedText, fontSize = 10.sp)
+        Text("TONE & VOLUME", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
+        Text("Independent bass, treble and preamp controls", color = MutedText, fontSize = 10.sp)
 
-        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Surface)) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Surface)) {
+            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("TONE SHAPING", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.3.sp)
                 Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(13.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RotaryKnob("Bass", state.bassGainDb, -12f..12f, 0f, String.format(Locale.US, "%+.1f dB", state.bassGainDb), viewModel::setBassGain, accent = accent)
-                    RotaryKnob("Treble", state.trebleGainDb, -12f..12f, 0f, String.format(Locale.US, "%+.1f dB", state.trebleGainDb), viewModel::setTrebleGain, accent = accent)
-                    RotaryKnob("Preamp", state.preampGainDb, -24f..12f, 0f, String.format(Locale.US, "%+.1f dB", state.preampGainDb), viewModel::setPreampGain, accent = accent)
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        RotaryKnob(
+                            "Bass", state.bassGainDb, -12f..12f, 0f,
+                            String.format(Locale.US, "%+.1f dB", state.bassGainDb),
+                            viewModel::setBassGain, accent = accent
+                        )
+                    }
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        RotaryKnob(
+                            "Treble", state.trebleGainDb, -12f..12f, 0f,
+                            String.format(Locale.US, "%+.1f dB", state.trebleGainDb),
+                            viewModel::setTrebleGain, accent = accent
+                        )
+                    }
                 }
+                androidx.compose.material3.HorizontalDivider(color = Color(0xFF343434))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("PREAMP", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(String.format(Locale.US, "%+.1f dB", state.preampGainDb), color = accent, fontSize = 11.sp)
+                    }
+                    Text("−24 to +12 dB", color = MutedText, fontSize = 9.sp)
+                }
+                Slider(
+                    value = state.preampGainDb,
+                    onValueChange = viewModel::setPreampGain,
+                    valueRange = -24f..12f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = accent,
+                        activeTrackColor = accent,
+                        inactiveTrackColor = Color(0xFF444444)
+                    )
+                )
             }
         }
 
         Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Surface)) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("ANTI-OVERLOAD PROTECTION", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp)
+            Column(modifier = Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("VOLUME & PROTECTION", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp)
+                SettingInlineSwitch("Dynamic volume compensation", state.dvcEnabled, viewModel::setDvcEnabled)
+                androidx.compose.material3.HorizontalDivider(color = Color(0xFF343434))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("MAX VOLUME SAFETY LIMITER", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text("Soft-knee limiting plus automatic preamp headroom compensation", color = MutedText, fontSize = 9.sp)
+                    Column(Modifier.weight(1f)) {
+                        Text("AVOID OVERLOADING / LIMITER", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Preamp headroom + 10:1 session limiter", color = MutedText, fontSize = 9.sp)
                     }
                     Switch(checked = state.limiterEnabled, onCheckedChange = viewModel::setLimiterEnabled)
                 }
                 Text(
-                    if (state.limiterEnabled) "SAFETY ACTIVE  ·  Boost peaks reserve digital headroom before the limiter." else "SAFETY BYPASSED  ·  High EQ boosts may cause clipping at high output levels.",
+                    if (state.limiterEnabled) {
+                        "Protection enabled · estimated headroom follows the combined EQ and tone curve."
+                    } else {
+                        "Protection bypassed · large boosts can exceed digital full scale."
+                    },
                     color = if (state.limiterEnabled) accent else Color(0xFFFF8A75),
                     fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Medium
                 )
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    RotaryKnob("Threshold", state.limiterThresholdDb, -12f..0f, -1f, String.format(Locale.US, "%.1f dB", state.limiterThresholdDb), viewModel::setLimiterThreshold, accent = Color(0xFFFFB547))
-                    RotaryKnob("Release", state.limiterReleaseMs, 10f..300f, 80f, String.format(Locale.US, "%.0f ms", state.limiterReleaseMs), viewModel::setLimiterRelease, accent = Color(0xFFFFB547))
-                }
-            }
-        }
-
-        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Surface)) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("STEREO IMAGE", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    RotaryKnob("Width", state.stereoWidthPercent, 0f..200f, 100f, String.format(Locale.US, "%.0f%%", state.stereoWidthPercent), viewModel::setStereoWidthPercent, accent = accent)
-                    RotaryKnob("Balance", state.stereoBalance, -1f..1f, 0f, String.format(Locale.US, "%+.2f", state.stereoBalance), viewModel::setStereoBalance, accent = accent)
-                }
-                Text("0% width = mono  ·  100% = original  ·  200% = expanded sides", color = MutedText, fontSize = 9.sp)
-            }
-        }
-
-        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Surface)) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("DVC / MASTER", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                SettingInlineSwitch("Dynamic volume compensation", state.dvcEnabled, viewModel::setDvcEnabled)
-                SettingInlineSwitch("Master equalizer", state.masterEnabled, viewModel::setMasterEnabled)
                 Text(
-                    if (state.dvcSnapshot.clippingProtectionActive) "DVC headroom ${String.format(Locale.US, "%.1f dB", state.dvcSnapshot.preampCompensationDb)}" else "DVC monitors the media stream volume level.",
+                    if (state.dvcSnapshot.clippingProtectionActive) {
+                        "DVC reserve ${String.format(Locale.US, "%.1f dB", state.dvcSnapshot.preampCompensationDb)}"
+                    } else {
+                        "DVC follows the Android music-stream volume setting."
+                    },
                     color = MutedText,
                     fontSize = 9.sp
                 )
