@@ -99,7 +99,7 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
             for (ignored in audioProfileUpdates) {
                 delay(AUDIO_UPDATE_INTERVAL_MS)
                 while (audioProfileUpdates.tryReceive().isSuccess) Unit
-                val latest = mutableState.value.toAudioProfile()
+                val latest = mutableState.value.toEffectiveAudioProfile()
                 applyAudioProfileDelta(lastApplied, latest)
                 lastApplied = latest
             }
@@ -114,6 +114,8 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        // Apply the selected 10-band default profile to any existing global DSP session.
+        audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
@@ -258,7 +260,15 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setBandCount(count: Int) {
-        mutableState.update { it.copy(bandCount = count.coerceIn(10, 32)) }
+        val safeCount = when {
+            count >= 32 -> 32
+            count >= 15 -> 15
+            else -> 10
+        }
+        if (mutableState.value.bandCount == safeCount) return
+        mutableState.update { it.copy(bandCount = safeCount) }
+        audioProfileUpdates.trySend(Unit)
+        recalculateResponse()
     }
 
     fun setShowCurveOnSliders(enabled: Boolean) {
@@ -642,12 +652,27 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         stereoWidthPercent = stereoWidthPercent,
         stereoBalance = stereoBalance
     ).sanitized()
+
+    /** Build the live DSP profile without deleting inactive bands from saved presets. */
+    private fun EqUiState.toEffectiveAudioProfile(): EqAudioProfile {
+        val active = activeBandIndices()
+        val profile = toAudioProfile()
+        return profile.copy(
+            bands = profile.bands.mapIndexed { index, band ->
+                band.copy(enabled = band.enabled && index in active)
+            }
+        ).sanitized()
+    }
 }
 
 private object EqResponseCalculator {
     fun calculate(state: EqUiState): List<FrequencyResponsePoint> {
         val sampleCount = 220
-        val ordered = state.bands.sortedBy { it.frequencyHz }
+        val activeIndices = state.activeBandIndices()
+        val ordered = state.bands.withIndex()
+            .filter { it.index in activeIndices }
+            .map { it.value }
+            .sortedBy { it.frequencyHz }
         val coupling = if (state.bandsOverlapEnabled) state.bandsOverlapPercent / 100f * 0.35f else 0f
         return List(sampleCount) { index ->
             val t = index.toDouble() / (sampleCount - 1).toDouble()

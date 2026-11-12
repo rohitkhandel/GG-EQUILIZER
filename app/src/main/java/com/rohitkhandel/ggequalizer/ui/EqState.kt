@@ -4,6 +4,8 @@ import com.rohitkhandel.ggequalizer.audio.DvcSnapshot
 import com.rohitkhandel.ggequalizer.audio.EqBandParameter
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge
 import com.rohitkhandel.ggequalizer.presets.PresetEntity
+import kotlin.math.abs
+import kotlin.math.ln
 import kotlin.math.pow
 
 data class EqBandUiState(
@@ -85,3 +87,31 @@ private fun defaultEqBandUiStates(): List<EqBandUiState> =
             (NativeDspBridge.MAX_PARAMETRIC_BANDS - 1).toDouble()
         EqBandUiState(frequencyHz = (20.0 * 1000.0.pow(position)).toFloat())
     }
+
+/**
+ * Returns the band slots that are active in the selected graphic/parametric mode.
+ * The frequency targets intentionally match the console's 10/15-band mappings.
+ */
+internal fun EqUiState.activeBandIndices(): Set<Int> {
+    if (bands.isEmpty()) return emptySet()
+    if (bandCount >= 32) return bands.indices.toSet()
+
+    val targets = if (bandCount >= 15) {
+        listOf(
+            25f, 40f, 63f, 100f, 160f, 250f, 400f, 630f,
+            1_000f, 1_600f, 2_500f, 4_000f, 6_300f, 10_000f, 16_000f
+        )
+    } else {
+        listOf(
+            31f, 62f, 125f, 250f, 500f,
+            1_000f, 2_000f, 4_000f, 8_000f, 16_000f
+        )
+    }
+
+    return targets.mapNotNull { targetHz ->
+        bands.indices.minByOrNull { index ->
+            abs(ln(bands[index].frequencyHz.coerceAtLeast(1f) / targetHz))
+        }
+    }.toSet()
+}
+
