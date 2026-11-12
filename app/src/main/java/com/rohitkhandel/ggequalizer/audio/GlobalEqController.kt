@@ -415,18 +415,37 @@ object GlobalEqController {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
         return try {
             // A single EQ response mapper avoids duplicate BassBoost/MBC colouring.
-            val config = DynamicsProcessing.Config.Builder(
-                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-                CHANNEL_COUNT,
-                true,
-                BAND_COUNT,
-                false,
-                0,
-                false,
-                0,
-                true
-            ).build()
-            val dynamics = DynamicsProcessing(0, effects.sessionId, config)
+            // Keep a dedicated two-band MBC stage available for the low end.
+            // Some OEM effect engines reject MBC configurations; in that case,
+            // fall back to the original EQ + limiter session chain.
+            val dynamics = try {
+                val bassConfig = DynamicsProcessing.Config.Builder(
+                    DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                    CHANNEL_COUNT,
+                    true,
+                    BAND_COUNT,
+                    true,
+                    2,
+                    false,
+                    0,
+                    true
+                ).build()
+                DynamicsProcessing(0, effects.sessionId, bassConfig)
+            } catch (mbcError: RuntimeException) {
+                Log.w(TAG, "Two-band bass dynamics unavailable; using standard session chain", mbcError)
+                val fallbackConfig = DynamicsProcessing.Config.Builder(
+                    DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                    CHANNEL_COUNT,
+                    true,
+                    BAND_COUNT,
+                    false,
+                    0,
+                    false,
+                    0,
+                    true
+                ).build()
+                DynamicsProcessing(0, effects.sessionId, fallbackConfig)
+            }
             effects.dynamics = dynamics
             applyDynamicsLocked(effects, dynamics)
             true
@@ -449,8 +468,60 @@ object GlobalEqController {
         // Android EqBand has cutoff + gain but no Q. Sample the complete RBJ
         // response into 32 logarithmic zones rather than guessing a Gaussian shape.
         if (applyDynamicsZonesLocked(effects, effect)) scheduleSmoothingUpdateLocked()
+        applyBassDynamicsLocked(effect)
         applyLimiterStagesLocked(effect)
         effect.enabled = profile.enabled
+    }
+
+    /**
+     * Compress only the low band when bass is boosted. This keeps bass transients
+     * controlled without pulling the mids/highs down with a full-band compressor.
+     * The MBC stage is optional because OEM audio-effect implementations vary.
+     */
+    @RequiresApi(Build.VERSION_CODES.P)
+    private fun applyBassDynamicsLocked(effect: DynamicsProcessing) {
+        val bassBoostActive = profile.enabled && profile.bassGainDb > 0.25f
+        runCatching {
+            effect.setMbcAllChannelsTo(
+                DynamicsProcessing.Mbc(
+                    true,
+                    bassBoostActive,
+                    2
+                )
+            )
+            effect.setMbcBandAllChannelsTo(
+                0,
+                DynamicsProcessing.MbcBand(
+                    bassBoostActive,
+                    150f,
+                    8f,
+                    110f,
+                    2f,
+                    -12f,
+                    8f,
+                    -90f,
+                    1f,
+                    0f,
+                    0f
+                )
+            )
+            effect.setMbcBandAllChannelsTo(
+                1,
+                DynamicsProcessing.MbcBand(
+                    bassBoostActive,
+                    20_000f,
+                    5f,
+                    100f,
+                    1f,
+                    0f,
+                    0f,
+                    -90f,
+                    1f,
+                    0f,
+                    0f
+                )
+            )
+        }.onFailure { Log.w(TAG, "Bass dynamics update was rejected by the device", it) }
     }
 
     @RequiresApi(Build.VERSION_CODES.P)
