@@ -9,15 +9,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import com.rohitkhandel.ggequalizer.audio.AudioInterceptorService
+import com.rohitkhandel.ggequalizer.ui.EqViewModel
 import com.rohitkhandel.ggequalizer.ui.MainEqualizerScreen
 
 class MainActivity : ComponentActivity() {
+    private val equalizerViewModel: EqViewModel by viewModels()
     private lateinit var notificationPermissionLauncher: ActivityResultLauncher<String>
+    private lateinit var recordAudioPermissionLauncher: ActivityResultLauncher<String>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,6 +29,11 @@ class MainActivity : ComponentActivity() {
         notificationPermissionLauncher =
             registerForActivityResult(ActivityResultContracts.RequestPermission()) {
                 startAudioMonitorService()
+            }
+
+        recordAudioPermissionLauncher =
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                equalizerViewModel.setVisualizerEnabled(granted)
             }
 
         startAudioMonitorService()
@@ -41,7 +50,24 @@ class MainActivity : ComponentActivity() {
                     onSurface = Color(0xFFEAF3FA)
                 )
             ) {
-                MainEqualizerScreen()
+                MainEqualizerScreen(
+                    viewModel = equalizerViewModel,
+                    onVisualizerToggle = { enabled ->
+                        if (!enabled) {
+                            equalizerViewModel.setVisualizerEnabled(false)
+                        } else {
+                            val granted = ContextCompat.checkSelfPermission(
+                                this,
+                                Manifest.permission.RECORD_AUDIO
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (granted) {
+                                equalizerViewModel.setVisualizerEnabled(true)
+                            } else {
+                                recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        }
+                    }
+                )
             }
         }
 
