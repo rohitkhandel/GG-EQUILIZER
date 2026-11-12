@@ -57,6 +57,7 @@ data class EqUiState(
     val attachmentSummary: String = "Waiting for an audio session",
     val responsePoints: List<FrequencyResponsePoint> = emptyList(),
     val visualizerEnabled: Boolean = false,
+    val visualizerRefreshRateHz: Int = 30,
     val spectrumBars: List<Float> = List(64) { 0.0f },
     val presets: List<PresetEntity> = emptyList(),
     val selectedPresetId: String? = null,

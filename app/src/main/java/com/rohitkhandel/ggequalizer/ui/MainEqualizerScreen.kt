@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
@@ -38,8 +37,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,7 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rohitkhandel.ggequalizer.presets.AutoEqParser
+import com.rohitkhandel.ggequalizer.ui.components.BandSlider
 import com.rohitkhandel.ggequalizer.ui.components.FrequencyResponseCanvas
 import com.rohitkhandel.ggequalizer.ui.components.PermissionSetupSheet
 import com.rohitkhandel.ggequalizer.ui.components.RotaryKnob
@@ -211,6 +208,7 @@ fun MainEqualizerScreen(
                     onMasterChanged = viewModel::setMasterEnabled,
                     onDvcChanged = viewModel::setDvcEnabled,
                     onVisualizerChanged = onVisualizerToggle,
+                    onVisualizerRefreshRateChanged = viewModel::setVisualizerRefreshRate,
                     onOpenAccessHelper = { showPermissionSheet = true },
                     onBackupPresets = { backupLauncher.launch("GG Equalizer backup.json") },
                     onRestorePresets = {
@@ -444,30 +442,25 @@ private fun EqualizerPage(
                         modifier = Modifier.size(width = 48.dp, height = 132.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Slider(
+                        BandSlider(
                             value = band.gainDb,
+                            valueRange = -12f..12f,
+                            selected = selected,
+                            accent = accent,
+                            modifier = Modifier.fillMaxSize(),
                             onValueChange = { gain ->
                                 viewModel.selectBand(index)
                                 if (multiSelect && selectedBands.isNotEmpty()) {
+                                    val delta = gain - band.gainDb
                                     selectedBands.forEach { target ->
                                         val start = state.bands.getOrNull(target)?.gainDb ?: 0f
-                                        if (target == index) viewModel.setBandGain(target, gain)
-                                        else viewModel.setBandGain(target, (start + (gain - band.gainDb)).coerceIn(-12f, 12f))
+                                        val next = if (target == index) gain else start + delta
+                                        viewModel.setBandGain(target, next.coerceIn(-12f, 12f))
                                     }
                                 } else {
                                     viewModel.setBandGain(index, gain)
                                 }
-                            },
-                            valueRange = -12f..12f,
-                            steps = 47,
-                            modifier = Modifier
-                                .requiredSize(width = 130.dp, height = 40.dp)
-                                .graphicsLayer { rotationZ = 270f },
-                            colors = SliderDefaults.colors(
-                                thumbColor = if (selected) accent else Color(0xFFD6D6D6),
-                                activeTrackColor = accent,
-                                inactiveTrackColor = Color(0xFF4A4A4A)
-                            )
+                            }
                         )
                     }
                     Text(formatHz(band.frequencyHz), color = MutedText, fontSize = 7.sp, fontFamily = FontFamily.Monospace)

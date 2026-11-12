@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -36,6 +38,10 @@ fun FrequencyResponseCanvas(
     accent: Color = Color(0xFF42D9F5),
     modifier: Modifier = Modifier
 ) {
+    val currentBands by rememberUpdatedState(bands)
+    val currentOnBandSelected by rememberUpdatedState(onBandSelected)
+    val currentOnBandGainChanged by rememberUpdatedState(onBandGainChanged)
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -54,31 +60,30 @@ fun FrequencyResponseCanvas(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(190.dp)
-                .pointerInput(bands) {
+                .pointerInput(Unit) {
                     detectTapGestures { tap ->
-                        if (bands.isNotEmpty() && size.width > 0f) {
+                        val current = currentBands
+                        if (current.isNotEmpty() && size.width > 0f) {
                             val normalized = (tap.x / size.width).coerceIn(0.0f, 1.0f)
                             val tappedHz = (20.0 * 1000.0.pow(normalized.toDouble())).toFloat()
-                            val nearest = bands.indices.minByOrNull { index ->
-                                abs(ln(
-                                    bands[index].frequencyHz.coerceAtLeast(1.0f) /
-                                        tappedHz.coerceAtLeast(1.0f)
-                                ))
+                            val nearest = current.indices.minByOrNull { index ->
+                                abs(ln(current[index].frequencyHz.coerceAtLeast(1.0f) / tappedHz.coerceAtLeast(1.0f)))
                             }
-                            nearest?.let(onBandSelected)
+                            nearest?.let(currentOnBandSelected)
                         }
                     }
                 }
-                .pointerInput(bands, onBandGainChanged) {
+                .pointerInput(Unit) {
                     var activeBand = -1
                     detectDragGestures(
                         onDragStart = { point ->
+                            val current = currentBands
                             val normalized = (point.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)
                             val frequency = (20.0 * 1000.0.pow(normalized.toDouble())).toFloat()
-                            activeBand = bands.indices.minByOrNull { index ->
-                                abs(ln(bands[index].frequencyHz.coerceAtLeast(1f) / frequency.coerceAtLeast(1f)))
+                            activeBand = current.indices.minByOrNull { index ->
+                                abs(ln(current[index].frequencyHz.coerceAtLeast(1f) / frequency.coerceAtLeast(1f)))
                             } ?: -1
-                            if (activeBand >= 0) onBandSelected(activeBand)
+                            if (activeBand >= 0) currentOnBandSelected(activeBand)
                         },
                         onDrag = { change, _ ->
                             if (activeBand >= 0) {
@@ -86,8 +91,8 @@ fun FrequencyResponseCanvas(
                                 val bottomInset = 14f
                                 val usableHeight = (size.height - topInset - bottomInset).coerceAtLeast(1f)
                                 val normalized = ((change.position.y - topInset) / usableHeight).coerceIn(0f, 1f)
-                                val gain = 24f - normalized * 48f
-                                onBandGainChanged(activeBand, gain.coerceIn(-24f, 24f))
+                                val gain = 12f - normalized * 24f
+                                currentOnBandGainChanged(activeBand, gain.coerceIn(-12f, 12f))
                                 change.consume()
                             }
                         },

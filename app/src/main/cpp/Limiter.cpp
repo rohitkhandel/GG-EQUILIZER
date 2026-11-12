@@ -218,10 +218,16 @@ void Limiter::process(float* interleavedStereo,
             outputRight = 0.0F;
         }
 
-        interleavedStereo[offset] =
-            std::clamp(outputLeft, -1.0F, 1.0F);
-        interleavedStereo[offset + 1U] =
-            std::clamp(outputRight, -1.0F, 1.0F);
+        if (parameters_.enabled) {
+            // The look-ahead gain computer should keep this below full scale.
+            // This final guard only catches numeric overshoot while limiting.
+            interleavedStereo[offset] = std::clamp(outputLeft, -1.0F, 1.0F);
+            interleavedStereo[offset + 1U] = std::clamp(outputRight, -1.0F, 1.0F);
+        } else {
+            // Limiter bypass must not silently become a hard clipper.
+            interleavedStereo[offset] = std::clamp(outputLeft, -64.0F, 64.0F);
+            interleavedStereo[offset + 1U] = std::clamp(outputRight, -64.0F, 64.0F);
+        }
 
         writeIndex_ = (writeIndex_ + 1U) % delayBufferLength_;
         ++frameIndex_;

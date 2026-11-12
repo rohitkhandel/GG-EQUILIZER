@@ -34,6 +34,7 @@ class FftAnalyzer(context: Context) {
     @Synchronized
     fun start(
         audioSessionId: Int,
+        requestedRefreshRateHz: Int = 30,
         onSpectrum: (List<Float>) -> Unit
     ): Boolean {
         stop()
@@ -66,7 +67,8 @@ class FftAnalyzer(context: Context) {
                     .coerceAtLeast(range[0])
                 check(candidate.setCaptureSize(legalSize) == Visualizer.SUCCESS)
 
-                val rate = Visualizer.getMaxCaptureRate().coerceAtMost(MAX_CAPTURE_RATE)
+                val requestedRate = requestedRefreshRateHz.coerceIn(MIN_CAPTURE_RATE_HZ, MAX_CAPTURE_RATE_HZ) * 1000
+                val rate = Visualizer.getMaxCaptureRate().coerceAtMost(requestedRate)
                 val listener = object : Visualizer.OnDataCaptureListener {
                     override fun onWaveFormDataCapture(
                         visualizer: Visualizer?,
@@ -193,7 +195,8 @@ class FftAnalyzer(context: Context) {
         private const val TAG = "GGEqFftAnalyzer"
         const val BAR_COUNT = 64
         private const val TARGET_CAPTURE_SIZE = 1024
-        private const val MAX_CAPTURE_RATE = 60_000
+        private const val MIN_CAPTURE_RATE_HZ = 15
+        private const val MAX_CAPTURE_RATE_HZ = 60
         private const val ATTACK = 0.62f
         private const val RELEASE = 0.88f
         private const val FLOOR_DB = -72.0

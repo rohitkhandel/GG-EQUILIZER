@@ -28,7 +28,6 @@ object GlobalEqController {
     private const val SAMPLE_RATE_HZ = 48_000
     private const val CHANNEL_COUNT = 2
     private const val BAND_COUNT = NativeDspBridge.MAX_PARAMETRIC_BANDS
-    private const val MBC_BAND_COUNT = 3
 
     private data class SessionEffects(
         val sessionId: Int,
@@ -169,11 +168,26 @@ object GlobalEqController {
     fun setBand(index: Int, band: EqBandParameter) {
         if (index !in 0 until BAND_COUNT) return
         synchronized(lock) {
+            val normalizedBand = band.sanitized()
             val updated = profile.bands.toMutableList()
-            updated[index] = band.sanitized()
+            updated[index] = normalizedBand
             profile = profile.copy(bands = updated)
-            syncNativeLocked()
-            applyProfileToAllSessionsLocked()
+            if (nativeHandle == 0L) ensureNativeEngineLocked()
+            if (nativeHandle != 0L) {
+                runCatching {
+                    NativeDspBridge.nativeSetBand(
+                        nativeHandle,
+                        index,
+                        normalizedBand.filterType,
+                        normalizedBand.frequencyHz,
+                        normalizedBand.gainDb,
+                        normalizedBand.qFactor,
+                        normalizedBand.enabled
+                    )
+                    NativeDspBridge.nativeSetPreampGain(nativeHandle, effectivePreampDbLocked())
+                }.onFailure { Log.w(TAG, "Could not update native EQ band $index", it) }
+            }
+            applyBandToAllSessionsLocked(index)
         }
         publishSnapshot()
     }
@@ -342,8 +356,8 @@ object GlobalEqController {
                 CHANNEL_COUNT,
                 true,
                 BAND_COUNT,
-                true,
-                MBC_BAND_COUNT,
+                false,
+                0,
                 true,
                 BAND_COUNT,
                 true
@@ -397,26 +411,6 @@ object GlobalEqController {
             )
         }
 
-        val mbc = DynamicsProcessing.Mbc(true, profile.enabled, MBC_BAND_COUNT)
-        floatArrayOf(250.0f, 4_000.0f, 20_000.0f).forEachIndexed { index, cutoff ->
-            mbc.setBand(
-                index,
-                DynamicsProcessing.MbcBand(
-                    profile.enabled,
-                    cutoff,
-                    10.0f,
-                    100.0f,
-                    1.5f,
-                    -18.0f,
-                    6.0f,
-                    -80.0f,
-                    1.0f,
-                    0.0f,
-                    0.0f
-                )
-            )
-        }
-        effect.setMbcAllChannelsTo(mbc)
         effect.setLimiterAllChannelsTo(
             DynamicsProcessing.Limiter(
                 true,
@@ -507,6 +501,48 @@ object GlobalEqController {
                 .onFailure { Log.w(TAG, "Could not update DynamicsProcessing", it) }
         } else {
             applyFallbackLocked(effects)
+        }
+    }
+
+    /**
+     * Fast path for live fader movement. Only the changed pre-EQ band and
+     * current input headroom are updated; the full 32-band profile is not
+     * resent for every pointer event.
+     */
+    private fun applyBandToAllSessionsLocked(changedIndex: Int) {
+        val ordered = profile.bands.withIndex().sortedBy { it.value.frequencyHz }
+        val orderedIndex = ordered.indexOfFirst { it.index == changedIndex }
+        val changedBand = profile.bands[changedIndex]
+        val nextFrequency = ordered.getOrNull(orderedIndex + 1)?.value?.frequencyHz ?: 20_000.0f
+        val cutoff = sqrt(
+            changedBand.frequencyHz.coerceAtLeast(20.0f) *
+                nextFrequency.coerceAtLeast(changedBand.frequencyHz + 1.0f)
+        ).coerceIn(20.0f, 20_000.0f)
+
+        sessions.values.forEach { effects ->
+            if (!profile.enabled) {
+                effects.setEnabled(false)
+                return@forEach
+            }
+            val dynamics = effects.dynamics
+            if (dynamics != null && orderedIndex >= 0) {
+                runCatching {
+                    dynamics.setInputGainAllChannelsTo(effectivePreampDbLocked())
+                    dynamics.setPreEqBandAllChannelsTo(
+                        orderedIndex,
+                        DynamicsProcessing.EqBand(
+                            changedBand.enabled,
+                            cutoff,
+                            if (changedBand.enabled) changedBand.gainDb else 0.0f
+                        )
+                    )
+                    dynamics.enabled = true
+                }.onFailure {
+                    Log.w(TAG, "Could not update live EQ band $changedIndex", it)
+                }
+            } else {
+                applyFallbackLocked(effects)
+            }
         }
     }
 

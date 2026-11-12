@@ -222,8 +222,17 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         startSpectrumCapture(mutableState.value.activeSessionId ?: 0)
     }
 
+    fun setVisualizerRefreshRate(rateHz: Int) {
+        val sanitized = rateHz.coerceIn(15, 60)
+        mutableState.update { it.copy(visualizerRefreshRateHz = sanitized) }
+        if (mutableState.value.visualizerEnabled) {
+            startSpectrumCapture(mutableState.value.activeSessionId ?: 0)
+        }
+    }
+
     private fun startSpectrumCapture(sessionId: Int) {
-        val started = fftAnalyzer.start(sessionId) { bars ->
+        val requestedRefreshRate = mutableState.value.visualizerRefreshRateHz
+        val started = fftAnalyzer.start(sessionId, requestedRefreshRate) { bars ->
             scope.launch(Dispatchers.Main.immediate) {
                 mutableState.update { current ->
                     if (current.visualizerEnabled) current.copy(spectrumBars = bars)

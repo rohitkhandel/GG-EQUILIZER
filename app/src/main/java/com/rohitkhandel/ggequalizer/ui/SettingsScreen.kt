@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -22,8 +24,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,6 +45,7 @@ fun SettingsScreen(
     onMasterChanged: (Boolean) -> Unit,
     onDvcChanged: (Boolean) -> Unit,
     onVisualizerChanged: (Boolean) -> Unit,
+    onVisualizerRefreshRateChanged: (Int) -> Unit,
     onOpenAccessHelper: () -> Unit,
     onBackupPresets: () -> Unit,
     onRestorePresets: () -> Unit
@@ -59,6 +62,7 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxWidth()
             .background(Background)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -85,12 +89,26 @@ fun SettingsScreen(
                 value = runCatching { NativeDspBridge.nativeVersion() }.getOrDefault("Native core unavailable")
             )
             SettingValue(
-                title = "Processing",
-                value = "32 parametric bands  ·  48 kHz engine"
+                title = "Native DSP parameters",
+                value = "32-band parametric engine  ·  48 kHz default"
             )
             SettingValue(
                 title = "Detected sessions",
                 value = "${state.activeSessionCount}  ·  ${state.attachmentSummary}"
+            )
+            SettingValue(
+                title = "Output buffer",
+                value = "Managed by Android and the active player"
+            )
+            Text(
+                "The native C++ engine processes PCM buffers owned by GG. Third-party player audio is modified only through compatible Android audio sessions; a normal app cannot replace the system-wide output mixer.",
+                color = Muted,
+                fontSize = 10.sp
+            )
+            Text(
+                "Android does not expose a safe global buffer-size control for these attached audio effects, so GG does not show a non-functional buffer selector.",
+                color = Muted,
+                fontSize = 10.sp
             )
         }
 
@@ -100,6 +118,22 @@ fun SettingsScreen(
                 description = "Show 64 logarithmic spectrum bars behind the response curve",
                 checked = state.visualizerEnabled,
                 onCheckedChange = onVisualizerChanged
+            )
+            Text("Refresh rate", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(15, 30, 60).forEach { rate ->
+                    AccentChoice(
+                        label = "$rate Hz",
+                        color = accent,
+                        selected = state.visualizerRefreshRateHz == rate,
+                        onClick = { onVisualizerRefreshRateChanged(rate) }
+                    )
+                }
+            }
+            Text(
+                "Requested FFT refresh rate. Android and the device audio effect may cap the actual callback rate.",
+                color = Muted,
+                fontSize = 10.sp
             )
             Text(
                 "Android may limit Visualizer capture or output-mix access on some devices.",
