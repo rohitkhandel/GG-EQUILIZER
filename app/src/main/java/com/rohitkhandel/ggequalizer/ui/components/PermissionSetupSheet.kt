@@ -103,7 +103,7 @@ fun PermissionSetupSheet(onDismiss: () -> Unit) {
                 }
 
                 Text(
-                    text = "DUMP is a protected system permission. A normal APK usually cannot receive it through pm grant; the command below is provided for checking supported test/system builds only.",
+                    text = "DUMP is a protected system permission. A standard user-installed APK cannot normally obtain this system-protected permission.",
                     color = Color(0xFFFFC276),
                     fontSize = 10.sp
                 )
@@ -114,7 +114,7 @@ fun PermissionSetupSheet(onDismiss: () -> Unit) {
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("COPY ADB / SHIZUKU CHECK COMMAND")
+                    Text("COPY ADB PERMISSION STATUS CHECK")
                 }
                 TextButton(
                     onClick = { refreshToken++ },
@@ -229,6 +229,6 @@ private fun launchSettings(context: Context, intent: Intent) {
 
 private fun copyDumpCommand(context: Context) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val command = "pm grant ${context.packageName} android.permission.DUMP"
-    clipboard.setPrimaryClip(ClipData.newPlainText("GG Equalizer DUMP permission check", command))
+    val command = "adb shell dumpsys package ${context.packageName}"
+    clipboard.setPrimaryClip(ClipData.newPlainText("GG Equalizer permission status check", command))
 }
