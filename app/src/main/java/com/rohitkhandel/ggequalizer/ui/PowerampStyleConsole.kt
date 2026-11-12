@@ -363,19 +363,13 @@ private fun StudioEqActionRack(
     state: EqUiState, accent: Color, viewModel: EqViewModel,
     onSave: () -> Unit, onImport: () -> Unit, onReset: () -> Unit
 ) {
-    var modeMenu by rememberSaveable { mutableStateOf(false) }
     var presetMenu by rememberSaveable { mutableStateOf(false) }
     var moreMenu by rememberSaveable { mutableStateOf(false) }
     val selectedPreset = state.presets.firstOrNull { it.presetId == state.selectedPresetId }?.presetName ?: "Flat"
     Row(Modifier.fillMaxWidth().height(71.dp).padding(horizontal = 10.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.width(62.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Box {
-                StudioActionPill("EQ", accent, Modifier.fillMaxWidth()) { modeMenu = true }
-                DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
-                    DropdownMenuItem(text = { Text("10-band") }, onClick = { modeMenu = false; viewModel.setBandCount(10) })
-                    DropdownMenuItem(text = { Text("15-band") }, onClick = { modeMenu = false; viewModel.setBandCount(15) })
-                    DropdownMenuItem(text = { Text("Parametric 32") }, onClick = { modeMenu = false; viewModel.setBandCount(32) })
-                }
+            StudioActionPill(if (state.masterEnabled) "EQU" else "OFF", if (state.masterEnabled) accent else StudioMuted, Modifier.fillMaxWidth()) {
+                viewModel.setMasterEnabled(!state.masterEnabled)
             }
             StudioActionPill(if (state.limiterEnabled) "LIMIT ✓" else "LIMIT", if (state.limiterEnabled) accent else StudioMuted, Modifier.fillMaxWidth()) {
                 viewModel.setLimiterEnabled(!state.limiterEnabled)
@@ -401,6 +395,9 @@ private fun StudioEqActionRack(
         Box {
             Text("⋮", color = StudioText, fontSize = 23.sp, modifier = Modifier.clickable { moreMenu = true }.padding(horizontal = 10.dp))
             DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                DropdownMenuItem(text = { Text("10-band graphic") }, onClick = { moreMenu = false; viewModel.setBandCount(10) })
+                DropdownMenuItem(text = { Text("15-band graphic") }, onClick = { moreMenu = false; viewModel.setBandCount(15) })
+                DropdownMenuItem(text = { Text("32-band parametric") }, onClick = { moreMenu = false; viewModel.setBandCount(32) })
                 DropdownMenuItem(text = { Text("Save preset") }, onClick = { moreMenu = false; onSave() })
                 DropdownMenuItem(text = { Text("Import AutoEQ") }, onClick = { moreMenu = false; onImport() })
                 DropdownMenuItem(text = { Text("Reset equalizer") }, onClick = { moreMenu = false; onReset() })
