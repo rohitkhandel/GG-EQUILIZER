@@ -105,7 +105,9 @@ class DvcManager(context: Context) {
         // Reserve only the estimated peak of the combined response, not the
         // arithmetic sum of every positive band (which caused weak output).
         val requestedBoostDb = GlobalEqController.estimatedPeakBoostDb()
-        val compensationDb = if (dvcEnabled) {
+        // Avoid double-reserving the same EQ peak: when the limiter is on,
+        // GlobalEqController already applies this combined-response headroom.
+        val compensationDb = if (dvcEnabled && !profile.limiterEnabled) {
             -requestedBoostDb.coerceIn(0.0f, MAX_SOFTWARE_COMPENSATION_DB)
         } else {
             0.0f
@@ -134,7 +136,7 @@ class DvcManager(context: Context) {
 
         val boostDb = GlobalEqController.estimatedPeakBoostDb()
 
-        val compensation = if (dvcEnabled) {
+        val compensation = if (dvcEnabled && !profile.limiterEnabled) {
             -boostDb.coerceIn(0.0f, MAX_SOFTWARE_COMPENSATION_DB)
         } else {
             0.0f
