@@ -15,6 +15,7 @@ import com.rohitkhandel.ggequalizer.audio.FftAnalyzer
 import com.rohitkhandel.ggequalizer.audio.GlobalEqController
 import com.rohitkhandel.ggequalizer.audio.GlobalEqSnapshot
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge
+import com.rohitkhandel.ggequalizer.audio.AudioInterceptorService
 import com.rohitkhandel.ggequalizer.presets.EqDatabase
 import com.rohitkhandel.ggequalizer.presets.PresetBackup
 import com.rohitkhandel.ggequalizer.presets.PresetEntity

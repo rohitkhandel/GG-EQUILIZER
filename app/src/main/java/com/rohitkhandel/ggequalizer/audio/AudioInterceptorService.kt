@@ -37,6 +37,8 @@ class AudioInterceptorService : Service() {
     private var audioEffectReceiverRegistered = false
     private var playbackCallbackRegistered = false
     private var fallbackSessionPackage: String? = null
+    @Volatile
+    private var advancedTrackingEnabled = true
     private val mainHandler = Handler(Looper.getMainLooper())
     private val sessionExecutor = Executors.newSingleThreadExecutor()
     private var audioManager: AudioManager? = null
@@ -104,8 +106,9 @@ class AudioInterceptorService : Service() {
         val dvc = DvcManager(applicationContext)
         dvcManager = dvc
         dvc.start()
-        val savedDvcEnabled = getSharedPreferences(UI_PREFERENCES_NAME, MODE_PRIVATE)
-            .getBoolean(PREF_DVC_ENABLED, DEFAULT_DVC_ENABLED)
+        val uiPreferences = getSharedPreferences(UI_PREFERENCES_NAME, MODE_PRIVATE)
+        val savedDvcEnabled = uiPreferences.getBoolean(PREF_DVC_ENABLED, DEFAULT_DVC_ENABLED)
+        advancedTrackingEnabled = uiPreferences.getBoolean(PREF_ADVANCED_TRACKING, true)
         dvc.setEnabled(savedDvcEnabled)
         dvc.updateProfile(GlobalEqController.currentProfile())
 
@@ -154,6 +157,7 @@ class AudioInterceptorService : Service() {
     }
 
     private fun startAdvancedTracking() {
+        advancedTrackingEnabled = true
         if (advancedTracker != null) return
         trackerDiagnostic = "Advanced player tracking is starting"
         advancedTracker = AdvancedDumpTracker(applicationContext) { snapshot ->
@@ -195,6 +199,7 @@ class AudioInterceptorService : Service() {
     }
 
     private fun stopAdvancedTracking() {
+        advancedTrackingEnabled = false
         advancedTracker?.stop()
         advancedTracker = null
         if (playbackCallbackRegistered) {
@@ -312,7 +317,11 @@ class AudioInterceptorService : Service() {
     }
 
     private fun refreshDetectedPlayerPackages(extraPackages: List<String> = emptyList()) {
-        val mediaPackages = synchronized(activeMediaPackages) { activeMediaPackages.toList() }
+        val mediaPackages = if (advancedTrackingEnabled) {
+            synchronized(activeMediaPackages) { activeMediaPackages.toList() }
+        } else {
+            emptyList()
+        }
         val allPackages = (
             mediaPackages +
                 audioSessionPackages.values +
@@ -330,6 +339,13 @@ class AudioInterceptorService : Service() {
      * soon as a real session ID for that same player is observed.
      */
     private fun ensureSessionZeroFallback() {
+        if (!advancedTrackingEnabled) {
+            if (fallbackSessionPackage != null) {
+                GlobalEqController.detachSession(0)
+                fallbackSessionPackage = null
+            }
+            return
+        }
         val activePackage = synchronized(activeMediaPackages) {
             activeMediaPackages.firstOrNull()
         }

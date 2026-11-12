@@ -455,7 +455,7 @@ object GlobalEqController {
                 index,
                 DynamicsProcessing.EqBand(
                     profile.enabled,
-                    upperEdgeHz,
+                    centerFrequencyHz,
                     gainDb.coerceIn(-24f, 24f)
                 )
             )

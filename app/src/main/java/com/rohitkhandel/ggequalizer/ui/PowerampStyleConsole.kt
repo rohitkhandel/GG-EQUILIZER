@@ -294,6 +294,7 @@ private fun StudioBandWorkspace(state: EqUiState, viewModel: EqViewModel, accent
                 if (band != null) {
                     StudioBandPanel(
                         index = item.index, band = band, selected = item.index == state.selectedBandIndex,
+                        valueMode = state.equalizerValueMode,
                         modifier = Modifier.width(194.dp).fillMaxHeight(),
                         onSelect = { viewModel.selectBand(item.index) },
                         onGain = { viewModel.setBandGain(item.index, it) },
@@ -317,7 +318,7 @@ private fun StudioBandWorkspace(state: EqUiState, viewModel: EqViewModel, accent
 
 @Composable
 private fun StudioBandPanel(
-    index: Int, band: EqBandUiState, selected: Boolean, modifier: Modifier,
+    index: Int, band: EqBandUiState, selected: Boolean, valueMode: String, modifier: Modifier,
     onSelect: () -> Unit, onGain: (Float) -> Unit, onFrequency: (Float) -> Unit,
     onQ: (Float) -> Unit, onFilter: (Int) -> Unit, onEnabled: (Boolean) -> Unit
 ) {
@@ -346,7 +347,7 @@ private fun StudioBandPanel(
         }
         Row(Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             StudioGainFader(
-                value = band.gainDb, valueRange = -15f..15f, valueMode = state.equalizerValueMode,
+                value = band.gainDb, valueRange = -15f..15f, valueMode = valueMode,
                 label = "GAIN", accent = StudioRed, selected = selected, compact = false,
                 modifier = Modifier.width(53.dp).fillMaxHeight(), onTouchStart = onSelect, onValueChange = onGain
             )

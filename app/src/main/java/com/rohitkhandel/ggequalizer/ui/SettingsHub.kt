@@ -150,8 +150,14 @@ fun SettingsHub(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             transitionSpec = {
                 val direction = if (forward) 1 else -1
-                (slideInHorizontally({ width -> width * direction }, tween(230)) + fadeIn(tween(190))) togetherWith
-                    (slideOutHorizontally({ width -> -width * direction }, tween(190)) + fadeOut(tween(150)))
+                (slideInHorizontally(
+                    initialOffsetX = { fullWidth -> fullWidth * direction },
+                    animationSpec = tween(230)
+                ) + fadeIn(tween(190))) togetherWith
+                    (slideOutHorizontally(
+                        targetOffsetX = { fullWidth -> -fullWidth * direction },
+                        animationSpec = tween(190)
+                    ) + fadeOut(tween(150)))
             },
             label = "settings navigation"
         ) { page ->
