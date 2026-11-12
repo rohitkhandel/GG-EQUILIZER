@@ -240,24 +240,32 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun removeSelectedParametricBand() {
+        removeParametricBand(mutableState.value.selectedBandIndex)
+    }
+
+    fun removeParametricBand(index: Int) {
         var removed = false
         mutableState.update { current ->
-            val selected = current.selectedBandIndex
-            if (selected !in current.parametricBandIndices) return@update current
+            if (index !in current.parametricBandIndices) return@update current
 
             val changedBands = current.bands.toMutableList()
-            changedBands[selected] = changedBands[selected].copy(
+            changedBands[index] = changedBands[index].copy(
                 gainDb = 0f,
                 qFactor = 1f,
                 filterType = NativeDspBridge.FILTER_PEAKING,
                 enabled = false
             )
-            val remaining = current.parametricBandIndices.filterNot { it == selected }
+            val remaining = current.parametricBandIndices.filterNot { it == index }
             removed = true
+            val nextSelected = when {
+                current.selectedBandIndex != index -> current.selectedBandIndex
+                remaining.isNotEmpty() -> remaining.first()
+                else -> 0
+            }
             current.copy(
                 bands = changedBands,
                 parametricBandIndices = remaining,
-                selectedBandIndex = remaining.firstOrNull() ?: 0,
+                selectedBandIndex = nextSelected,
                 presetMessage = "Removed filter · ${remaining.size} remaining"
             )
         }
