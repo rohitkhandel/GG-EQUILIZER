@@ -16,13 +16,9 @@ import kotlin.math.pow
 import kotlin.math.sqrt
 
 /**
- * Per-player-session DSP controller.
- *
- * DynamicsProcessing provides the main 32-band graphic response. The Android
- * BassBoost effect is attached in parallel when the HAL accepts it, and the
- * post-EQ tone contour supplies the broad low-frequency and high-frequency
- * shaping. Hardware effects are best-effort because OEM audio effect chains
- * differ between devices and music players.
+ * Owns per-session Android effects and the GG native parameter engine.
+ * External players are processed only where Android exposes a usable session
+ * ID and the device audio-effect framework permits attachment.
  */
 object GlobalEqController {
     private const val TAG = "GlobalEqController"
@@ -68,7 +64,7 @@ object GlobalEqController {
     private var nativeHandle = 0L
     private var activePlayerPackages: List<String> = emptyList()
     private var profile = EqAudioProfile.defaults()
-    private var dvcCompensationDb = 0.0f
+    private var dvcCompensationDb = 0f
 
     fun initialize(context: Context) {
         synchronized(lock) {
@@ -85,7 +81,6 @@ object GlobalEqController {
         profile.copy(bands = profile.bands.toList())
     }
 
-    /** Estimated positive response, used only by DVC when the limiter is off. */
     fun estimatedPeakBoostDb(): Float = synchronized(lock) {
         estimatedPeakBoostDbLocked()
     }
@@ -109,9 +104,9 @@ object GlobalEqController {
     fun attachSession(sessionId: Int, packageName: String): String {
         if (sessionId < 0 || packageName.isBlank()) return "invalid"
         val attachment = synchronized(lock) {
-            sessions[sessionId]?.let { existing ->
-                if (existing.packageName == packageName) return@synchronized existing.attachment
-                existing.release()
+            sessions[sessionId]?.let { current ->
+                if (current.packageName == packageName) return@synchronized current.attachment
+                current.release()
                 sessions.remove(sessionId)
             }
 
@@ -122,13 +117,11 @@ object GlobalEqController {
                 applyProfileLocked(effects)
             }
             effects.attachment = when {
-                effects.dynamics != null -> {
-                    if (effects.bassBoost != null) "dynamics-processing + hardware-bass"
-                    else "dynamics-processing"
-                }
+                effects.dynamics != null && effects.bassBoost != null -> "dynamics + hardware bass"
+                effects.dynamics != null -> "dynamics-processing"
                 effects.equalizer != null || effects.bassBoost != null ||
-                    effects.loudnessEnhancer != null -> "legacy-effects"
-                else -> "session-observed-no-compatible-effect"
+                    effects.loudnessEnhancer != null -> "legacy session effects"
+                else -> "session observed; no compatible effect"
             }
             sessions[sessionId] = effects
             Log.i(TAG, "Session $sessionId ($packageName): ${effects.attachment}")
@@ -163,7 +156,6 @@ object GlobalEqController {
                     }
                     applyProfileLocked(effects)
                     effects.setEnabled(true)
-                    applySessionPreampLocked(effects)
                 }
             } else {
                 sessions.values.forEach { it.setEnabled(false) }
@@ -176,21 +168,16 @@ object GlobalEqController {
     fun setBand(index: Int, band: EqBandParameter) {
         if (index !in 0 until BAND_COUNT) return
         synchronized(lock) {
-            val normalized = band.sanitized()
+            val clean = band.sanitized()
             val updated = profile.bands.toMutableList()
-            updated[index] = normalized
+            updated[index] = clean
             profile = profile.copy(bands = updated)
             if (nativeHandle == 0L) ensureNativeEngineLocked()
             if (nativeHandle != 0L) {
                 runCatching {
                     NativeDspBridge.nativeSetBand(
-                        nativeHandle,
-                        index,
-                        normalized.filterType,
-                        normalized.frequencyHz,
-                        normalized.gainDb,
-                        normalized.qFactor,
-                        normalized.enabled
+                        nativeHandle, index, clean.filterType,
+                        clean.frequencyHz, clean.gainDb, clean.qFactor, clean.enabled
                     )
                     NativeDspBridge.nativeSetPreampGain(nativeHandle, effectivePreampDbLocked())
                 }.onFailure { Log.w(TAG, "Native band update failed", it) }
@@ -204,8 +191,8 @@ object GlobalEqController {
         if (!bassDb.isFinite() || !trebleDb.isFinite()) return
         synchronized(lock) {
             profile = profile.copy(
-                bassGainDb = bassDb.coerceIn(-12f, 12f),
-                trebleGainDb = trebleDb.coerceIn(-12f, 12f)
+                bassGainDb = bassDb.coerceIn(0f, 12f),
+                trebleGainDb = trebleDb.coerceIn(0f, 12f)
             )
             if (nativeHandle == 0L) ensureNativeEngineLocked()
             if (nativeHandle != 0L) {
@@ -214,6 +201,47 @@ object GlobalEqController {
                     NativeDspBridge.nativeSetPreampGain(nativeHandle, effectivePreampDbLocked())
                 }.onFailure { Log.w(TAG, "Native tone update failed", it) }
             }
+            sessions.values.forEach(::applyProfileLocked)
+        }
+        publishSnapshot()
+    }
+
+    fun setToneParameters(
+        bassFrequencyHz: Float,
+        bassQFactor: Float,
+        trebleFrequencyHz: Float,
+        trebleQFactor: Float
+    ) {
+        if (!bassFrequencyHz.isFinite() || !bassQFactor.isFinite() ||
+            !trebleFrequencyHz.isFinite() || !trebleQFactor.isFinite()
+        ) return
+        synchronized(lock) {
+            profile = profile.copy(
+                bassFrequencyHz = bassFrequencyHz.coerceIn(20f, 250f),
+                bassQFactor = bassQFactor.coerceIn(0.5f, 2f),
+                trebleFrequencyHz = trebleFrequencyHz.coerceIn(4_000f, 16_000f),
+                trebleQFactor = trebleQFactor.coerceIn(0.5f, 2f)
+            )
+            sessions.values.forEach(::applyProfileLocked)
+        }
+        publishSnapshot()
+    }
+
+    fun setDspOptions(
+        smoothGains: Boolean,
+        bandsOverlapEnabled: Boolean,
+        bandsOverlapPercent: Float,
+        avoidOverloading: Boolean
+    ) {
+        if (!bandsOverlapPercent.isFinite()) return
+        synchronized(lock) {
+            profile = profile.copy(
+                smoothGains = smoothGains,
+                bandsOverlapEnabled = bandsOverlapEnabled,
+                bandsOverlapPercent = bandsOverlapPercent.coerceIn(0f, 100f),
+                avoidOverloading = avoidOverloading
+            )
+            syncNativeLocked()
             sessions.values.forEach(::applyProfileLocked)
         }
         publishSnapshot()
@@ -258,29 +286,8 @@ object GlobalEqController {
                 limiterReleaseMs = releaseMs.coerceIn(10f, 300f)
             )
             if (nativeHandle == 0L) ensureNativeEngineLocked()
-            if (nativeHandle != 0L) {
-                runCatching {
-                    NativeDspBridge.nativeSetLimiter(
-                        nativeHandle,
-                        profile.limiterEnabled,
-                        profile.limiterThresholdDb,
-                        profile.limiterKneeDb,
-                        profile.limiterLookAheadMs,
-                        profile.limiterReleaseMs
-                    )
-                    NativeDspBridge.nativeSetPreampGain(nativeHandle, effectivePreampDbLocked())
-                }.onFailure { Log.w(TAG, "Native limiter update failed", it) }
-            }
-            sessions.values.forEach { effects ->
-                val dynamics = effects.dynamics
-                if (dynamics != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    runCatching { applyLimiterStagesLocked(dynamics) }
-                        .onFailure { Log.w(TAG, "Session limiter update failed", it) }
-                } else {
-                    applyFallbackLocked(effects)
-                }
-                applySessionPreampLocked(effects)
-            }
+            syncNativeLocked()
+            sessions.values.forEach(::applyProfileLocked)
         }
         publishSnapshot()
     }
@@ -338,83 +345,80 @@ object GlobalEqController {
         if (nativeHandle != 0L) syncNativeLocked()
     }
 
+    /** Reserve only the part of peak EQ/tone response that exceeds +8 dB. */
+    private fun automaticHeadroomDbLocked(): Float {
+        if (!profile.avoidOverloading) return 0f
+        return (estimatedPeakBoostDbLocked() - 8f).coerceIn(0f, 16f)
+    }
+
     private fun estimatedPeakBoostDbLocked(): Float {
-        var maximum = 0f
+        var peak = 0f
         for (index in 0..96) {
             val frequency = (20.0 * 1000.0.pow(index / 96.0)).toFloat()
             val response = smoothBandGainAtFrequency(profile.bands, frequency) +
                 bassToneGainAtFrequency(frequency) +
                 trebleToneGainAtFrequency(frequency) +
                 profile.preampGainDb
-            maximum = maxOf(maximum, response)
+            peak = maxOf(peak, response)
         }
-        return maximum.coerceIn(0f, 24f)
+        return peak.coerceIn(0f, 36f)
     }
 
-    private fun gaussianOctaveWeight(frequencyHz: Float, centerHz: Float, sigmaOctaves: Float): Float {
+    private fun gaussianWeight(frequencyHz: Float, centerHz: Float, sigmaOctaves: Float): Float {
         val distance = ln((frequencyHz / centerHz).coerceAtLeast(0.0001f)) / LN_2
-        return exp(-0.5f * (distance / sigmaOctaves).pow(2))
+        return exp(-0.5f * (distance / sigmaOctaves.coerceAtLeast(0.05f)).pow(2))
     }
 
-    /** Overlapping bell response. Q=1.41 gives useful adjacent-band overlap. */
+    /** Adjacent bands can contribute up to 35% of their level into each neighbour. */
     private fun smoothBandGainAtFrequency(
         bands: List<EqBandParameter>,
         frequencyHz: Float
     ): Float {
+        val ordered = bands.sortedBy { it.frequencyHz }
         var response = 0f
-        bands.forEach { band ->
-            if (!band.enabled) return@forEach
-            val sigma = (0.55f / band.qFactor.coerceIn(0.1f, 10f)).coerceIn(0.18f, 0.55f)
-            response += band.gainDb * gaussianOctaveWeight(frequencyHz, band.frequencyHz, sigma)
-        }
-        return response.coerceIn(-24f, 24f)
-    }
+        val sigmaBase = if (profile.smoothGains) 0.24f else 0.12f
+        val overlap = if (profile.bandsOverlapEnabled) {
+            (profile.bandsOverlapPercent / 100f) * 0.35f
+        } else 0f
 
-    private fun bassToneGainAtFrequency(frequencyHz: Float): Float {
-        val anchors = listOf(
-            25f to 1.00f,
-            31f to 1.00f,
-            62f to 0.90f,
-            90f to 0.65f,
-            125f to 0.35f,
-            220f to 0.00f
-        )
-        val weight = interpolateLogCurve(frequencyHz, anchors)
-        return (profile.bassGainDb / 12f * 15f * weight).coerceIn(-15f, 15f)
-    }
-
-    private fun trebleToneGainAtFrequency(frequencyHz: Float): Float {
-        val anchors = listOf(
-            4_000f to 0.10f,
-            6_000f to 0.40f,
-            8_000f to 0.75f,
-            12_000f to 1.00f,
-            16_000f to 1.00f,
-            20_000f to 0.75f
-        )
-        val weight = interpolateLogCurve(frequencyHz, anchors)
-        return (profile.trebleGainDb / 12f * 12f * weight).coerceIn(-12f, 12f)
-    }
-
-    private fun interpolateLogCurve(frequencyHz: Float, anchors: List<Pair<Float, Float>>): Float {
-        if (frequencyHz <= anchors.first().first) return anchors.first().second
-        if (frequencyHz >= anchors.last().first) return anchors.last().second
-        for (index in 0 until anchors.lastIndex) {
-            val (leftHz, leftValue) = anchors[index]
-            val (rightHz, rightValue) = anchors[index + 1]
-            if (frequencyHz in leftHz..rightHz) {
-                val progress = (
-                    ln(frequencyHz / leftHz) / ln(rightHz / leftHz)
-                    ).coerceIn(0f, 1f)
-                return leftValue + (rightValue - leftValue) * progress
+        ordered.forEachIndexed { index, band ->
+            if (!band.enabled) return@forEachIndexed
+            val sigma = (
+                sigmaBase * (1f / band.qFactor.coerceIn(0.1f, 10f)).coerceIn(0.55f, 1.8f) +
+                    overlap * 0.36f
+                ).coerceIn(0.09f, 0.62f)
+            var weight = gaussianWeight(frequencyHz, band.frequencyHz, sigma)
+            if (overlap > 0f) {
+                ordered.getOrNull(index - 1)?.let { previous ->
+                    weight += overlap * gaussianWeight(frequencyHz, previous.frequencyHz, sigma * 1.1f)
+                }
+                ordered.getOrNull(index + 1)?.let { next ->
+                    weight += overlap * gaussianWeight(frequencyHz, next.frequencyHz, sigma * 1.1f)
+                }
             }
+            response += band.gainDb * weight
         }
-        return 0f
+        return response.coerceIn(-30f, 30f)
     }
 
-    /** User preamp is preserved; there is no automatic -15 dB headroom cut. */
+    /** Soft low-shelf response centred at the selected bass frequency. */
+    private fun bassToneGainAtFrequency(frequencyHz: Float): Float {
+        val octaveDistance = ln((frequencyHz / profile.bassFrequencyHz).coerceAtLeast(0.0001f)) / LN_2
+        val transition = (0.62f / profile.bassQFactor).coerceIn(0.30f, 1.30f)
+        val weight = 1f / (1f + exp(octaveDistance / transition))
+        return (profile.bassGainDb / 12f * 16f * weight).coerceIn(0f, 16f)
+    }
+
+    /** Soft high-shelf response centred at the selected treble frequency. */
+    private fun trebleToneGainAtFrequency(frequencyHz: Float): Float {
+        val octaveDistance = ln((frequencyHz / profile.trebleFrequencyHz).coerceAtLeast(0.0001f)) / LN_2
+        val transition = (0.62f / profile.trebleQFactor).coerceIn(0.30f, 1.30f)
+        val weight = 1f / (1f + exp(-octaveDistance / transition))
+        return (profile.trebleGainDb / 12f * 12f * weight).coerceIn(0f, 12f)
+    }
+
     private fun effectivePreampDbLocked(): Float =
-        (profile.preampGainDb + dvcCompensationDb).coerceIn(-24f, 12f)
+        (profile.preampGainDb + dvcCompensationDb - automaticHeadroomDbLocked()).coerceIn(-24f, 12f)
 
     private fun syncNativeLocked() {
         val handle = nativeHandle
@@ -433,11 +437,11 @@ object GlobalEqController {
             NativeDspBridge.nativeSetStereoBalance(handle, profile.stereoBalance)
             NativeDspBridge.nativeSetLimiter(
                 handle,
-                profile.limiterEnabled,
-                profile.limiterThresholdDb,
+                profile.limiterEnabled && profile.avoidOverloading,
+                if (profile.avoidOverloading) -0.5f else profile.limiterThresholdDb,
                 profile.limiterKneeDb,
                 profile.limiterLookAheadMs,
-                profile.limiterReleaseMs
+                if (profile.avoidOverloading) 40f else profile.limiterReleaseMs
             )
         }.onFailure { Log.w(TAG, "Native DSP synchronization failed", it) }
     }
@@ -477,12 +481,12 @@ object GlobalEqController {
         if (effects.bassBoost == null) {
             runCatching {
                 BassBoost(0, effects.sessionId).also { effects.bassBoost = it }
-            }.onFailure { Log.w(TAG, "Hardware BassBoost unavailable for session ${effects.sessionId}", it) }
+            }.onFailure { Log.w(TAG, "Hardware BassBoost attach failed for ${effects.sessionId}", it) }
         }
         if (effects.loudnessEnhancer == null) {
             runCatching {
                 LoudnessEnhancer(effects.sessionId).also { effects.loudnessEnhancer = it }
-            }.onFailure { Log.w(TAG, "LoudnessEnhancer unavailable for session ${effects.sessionId}", it) }
+            }.onFailure { Log.w(TAG, "LoudnessEnhancer attach failed for ${effects.sessionId}", it) }
         }
     }
 
@@ -498,32 +502,28 @@ object GlobalEqController {
                 band.frequencyHz.coerceAtLeast(previous + 1f) *
                     next.coerceAtLeast(band.frequencyHz + 1f)
             ).coerceIn(20f, 20_000f)
-            val preEqGain = smoothBandGainAtFrequency(orderedBands, cutoff)
-            val postEqGain = bassToneGainAtFrequency(cutoff) + trebleToneGainAtFrequency(cutoff)
+            val preGain = smoothBandGainAtFrequency(orderedBands, cutoff)
+            val postGain = bassToneGainAtFrequency(cutoff) + trebleToneGainAtFrequency(cutoff)
+
             effect.setPreEqBandAllChannelsTo(
                 index,
-                DynamicsProcessing.EqBand(profile.enabled, cutoff, preEqGain)
+                DynamicsProcessing.EqBand(profile.enabled, cutoff, preGain.coerceIn(-30f, 30f))
             )
             effect.setPostEqBandAllChannelsTo(
                 index,
-                DynamicsProcessing.EqBand(profile.enabled, cutoff, postEqGain)
+                DynamicsProcessing.EqBand(profile.enabled, cutoff, postGain.coerceIn(-24f, 24f))
             )
         }
 
-        val mbcInUse = profile.enabled && profile.limiterEnabled
-        val mbc = DynamicsProcessing.Mbc(true, mbcInUse, MBC_BAND_COUNT)
-        val cutoffs = floatArrayOf(120f, 4_000f, 20_000f)
-        cutoffs.forEachIndexed { index, cutoff ->
-            val ratio = when (index) {
-                0 -> 2.0f
-                1 -> 2.5f
-                else -> 3.0f
-            }
-            val threshold = if (index == 0) -10f else -14f
+        val compressionOn = profile.enabled && profile.avoidOverloading
+        val mbc = DynamicsProcessing.Mbc(true, compressionOn, MBC_BAND_COUNT)
+        floatArrayOf(120f, 4_000f, 20_000f).forEachIndexed { index, cutoff ->
+            val ratio = if (index == 0) 2.2f else 2.8f
+            val threshold = if (index == 0) -11f else -14f
             mbc.setBand(
                 index,
                 DynamicsProcessing.MbcBand(
-                    mbcInUse, cutoff, 8f, 60f, ratio, threshold,
+                    compressionOn, cutoff, 8f, 60f, ratio, threshold,
                     4f, -80f, 1f, 0f, 0f
                 )
             )
@@ -535,32 +535,41 @@ object GlobalEqController {
 
     @RequiresApi(Build.VERSION_CODES.P)
     private fun applyLimiterStagesLocked(effect: DynamicsProcessing) {
+        val protected = profile.enabled && profile.limiterEnabled && profile.avoidOverloading
         effect.setLimiterAllChannelsTo(
             DynamicsProcessing.Limiter(
                 true,
-                profile.enabled && profile.limiterEnabled,
+                protected,
                 0,
                 1f,
-                50f,
-                10f,
-                -0.8f,
+                40f,
+                12f,
+                -0.5f,
                 2.5f
             )
         )
     }
 
     private fun applySessionPreampLocked(effects: SessionEffects) {
-        val requestedPreamp = profile.preampGainDb
         val enhancer = effects.loudnessEnhancer
-        val usesMakeup = enhancer != null && requestedPreamp > 0f
-        val sessionInputDb = (if (usesMakeup) 0f else requestedPreamp) + dvcCompensationDb
+        val positivePreamp = profile.preampGainDb.coerceAtLeast(0f)
+        val headroom = automaticHeadroomDbLocked()
+        val inputGain = profile.preampGainDb + dvcCompensationDb - headroom -
+            if (enhancer != null && positivePreamp > 0f) positivePreamp else 0f
+
         runCatching {
-            effects.dynamics?.setInputGainAllChannelsTo(sessionInputDb)
+            effects.dynamics?.setInputGainAllChannelsTo(inputGain.coerceIn(-24f, 12f))
         }.onFailure { Log.w(TAG, "Session input gain update failed", it) }
+
+        // Makeup is deliberately modest; the DynamicsProcessing limiter remains
+        // responsible for peaks rather than an unlimited post-limiter volume lift.
+        val makeupDb = if (enhancer != null && profile.avoidOverloading) {
+            positivePreamp + minOf(headroom, 1.5f)
+        } else if (enhancer != null) positivePreamp else 0f
         runCatching {
-            enhancer?.setTargetGain(if (requestedPreamp > 0f) (requestedPreamp * 100f).toInt() else 0)
-            enhancer?.enabled = profile.enabled && requestedPreamp > 0f
-        }.onFailure { Log.w(TAG, "Session makeup gain update failed", it) }
+            enhancer?.setTargetGain((makeupDb.coerceIn(0f, 12f) * 100f).toInt())
+            enhancer?.enabled = profile.enabled && makeupDb > 0f
+        }.onFailure { Log.w(TAG, "LoudnessEnhancer makeup update failed", it) }
     }
 
     private fun applyInputGainToAllSessionsLocked() {
@@ -573,35 +582,32 @@ object GlobalEqController {
         }
     }
 
-    private fun attachFallbackEffectsLocked(effects: SessionEffects) {
+    private fun applyFallbackEffectsLocked(effects: SessionEffects) {
         attachAuxiliaryEffectsLocked(effects)
         if (effects.equalizer == null) {
-            runCatching {
-                Equalizer(0, effects.sessionId).also { effects.equalizer = it }
-            }.onFailure { Log.w(TAG, "Equalizer fallback unavailable", it) }
+            runCatching { Equalizer(0, effects.sessionId).also { effects.equalizer = it } }
+                .onFailure { Log.w(TAG, "Equalizer fallback attach failed", it) }
         }
         applyFallbackLocked(effects)
     }
 
     private fun applyFallbackLocked(effects: SessionEffects) {
-        effects.equalizer?.let { equalizer ->
+        effects.equalizer?.let { eq ->
             runCatching {
-                val count = equalizer.numberOfBands.toInt()
-                val range = equalizer.bandLevelRange
-                for (index in 0 until count) {
-                    val centerHz = (equalizer.getCenterFreq(index.toShort()) / 1000f).coerceAtLeast(1f)
-                    val combinedGain = smoothBandGainAtFrequency(profile.bands, centerHz) +
-                        bassToneGainAtFrequency(centerHz) + trebleToneGainAtFrequency(centerHz)
-                    val millibels = (combinedGain * 100f).toInt()
-                        .coerceIn(range[0].toInt(), range[1].toInt())
-                    equalizer.setBandLevel(index.toShort(), millibels.toShort())
+                val range = eq.bandLevelRange
+                for (index in 0 until eq.numberOfBands.toInt()) {
+                    val frequencyHz = (eq.getCenterFreq(index.toShort()) / 1000f).coerceAtLeast(1f)
+                    val gain = smoothBandGainAtFrequency(profile.bands, frequencyHz) +
+                        bassToneGainAtFrequency(frequencyHz) + trebleToneGainAtFrequency(frequencyHz)
+                    val level = (gain * 100f).toInt().coerceIn(range[0].toInt(), range[1].toInt())
+                    eq.setBandLevel(index.toShort(), level.toShort())
                 }
-                equalizer.enabled = profile.enabled
+                eq.enabled = profile.enabled
             }.onFailure { Log.w(TAG, "Equalizer fallback update failed", it) }
         }
         effects.bassBoost?.let { boost ->
             runCatching {
-                val level = (profile.bassGainDb.coerceIn(0f, 12f) / 12f)
+                val level = profile.bassGainDb.coerceIn(0f, 12f) / 12f
                 boost.setStrength((level * 1000f).toInt().coerceIn(0, 1000).toShort())
                 boost.enabled = profile.enabled && level > 0f
             }.onFailure { Log.w(TAG, "Hardware BassBoost update failed", it) }
@@ -610,26 +616,22 @@ object GlobalEqController {
     }
 
     private fun applyProfileLocked(effects: SessionEffects) {
-        val dynamics = effects.dynamics
-        if (dynamics != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        if (effects.dynamics != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             runCatching {
-                applyDynamicsLocked(effects, dynamics)
+                applyDynamicsLocked(effects, effects.dynamics!!)
                 effects.bassBoost?.let { boost ->
                     val level = profile.bassGainDb.coerceIn(0f, 12f) / 12f
                     boost.setStrength((level * 1000f).toInt().coerceIn(0, 1000).toShort())
                     boost.enabled = profile.enabled && level > 0f
                 }
-            }.onFailure { Log.w(TAG, "Session DSP profile update failed", it) }
+            }.onFailure { Log.w(TAG, "Session DSP update failed", it) }
         } else {
             applyFallbackLocked(effects)
         }
-        effects.loudnessEnhancer?.let { enhancer ->
-            runCatching {
-                enhancer.enabled = profile.enabled && profile.preampGainDb > 0f
-            }
-        }
+        applySessionPreampLocked(effects)
     }
 
+    /** Fast path for a single fader move. */
     private fun applyBandToAllSessionsLocked() {
         val ordered = profile.bands.sortedBy { it.frequencyHz }
         sessions.values.forEach { effects ->
@@ -640,10 +642,7 @@ object GlobalEqController {
             val dynamics = effects.dynamics
             if (dynamics != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 runCatching {
-                    dynamics.setInputGainAllChannelsTo(
-                        if (effects.loudnessEnhancer != null && profile.preampGainDb > 0f) dvcCompensationDb
-                        else effectivePreampDbLocked()
-                    )
+                    applySessionPreampLocked(effects)
                     ordered.forEachIndexed { index, band ->
                         val previous = ordered.getOrNull(index - 1)?.frequencyHz ?: 20f
                         val next = ordered.getOrNull(index + 1)?.frequencyHz ?: 20_000f
@@ -660,8 +659,7 @@ object GlobalEqController {
                             )
                         )
                     }
-                    dynamics.enabled = true
-                }.onFailure { Log.w(TAG, "Live 32-band curve update failed", it) }
+                }.onFailure { Log.w(TAG, "Live band curve update failed", it) }
             } else {
                 applyFallbackLocked(effects)
             }
@@ -673,7 +671,6 @@ object GlobalEqController {
             if (profile.enabled) {
                 applyProfileLocked(effects)
                 effects.setEnabled(true)
-                applySessionPreampLocked(effects)
             } else {
                 effects.setEnabled(false)
             }
@@ -683,20 +680,19 @@ object GlobalEqController {
     private fun snapshotLocked() = GlobalEqSnapshot(
         masterEnabled = profile.enabled,
         activePlayers = activePlayerPackages,
-        sessions = sessions.values.map {
-            AudioSessionStatus(it.sessionId, it.packageName, it.attachment)
-        },
+        sessions = sessions.values.map { AudioSessionStatus(it.sessionId, it.packageName, it.attachment) },
         preampGainDb = profile.preampGainDb,
         effectivePreampGainDb = effectivePreampDbLocked(),
         bassGainDb = profile.bassGainDb,
         trebleGainDb = profile.trebleGainDb,
-        limiterEnabled = profile.limiterEnabled
+        limiterEnabled = profile.limiterEnabled && profile.avoidOverloading
     )
 
     private fun publishSnapshot() {
         val current = snapshot()
         listeners.forEach { listener -> runCatching { listener(current) } }
     }
+
 }
 
 data class EqBandParameter(
@@ -726,26 +722,39 @@ data class EqAudioProfile(
     val preampGainDb: Float = 0f,
     val bassGainDb: Float = 0f,
     val trebleGainDb: Float = 0f,
+    val bassFrequencyHz: Float = 85f,
+    val bassQFactor: Float = 0.8f,
+    val trebleFrequencyHz: Float = 10_000f,
+    val trebleQFactor: Float = 0.8f,
+    val smoothGains: Boolean = true,
+    val bandsOverlapEnabled: Boolean = true,
+    val bandsOverlapPercent: Float = 35f,
+    val avoidOverloading: Boolean = true,
     val limiterEnabled: Boolean = true,
-    val limiterThresholdDb: Float = -0.8f,
+    val limiterThresholdDb: Float = -0.5f,
     val limiterKneeDb: Float = 6f,
     val limiterLookAheadMs: Float = 1f,
-    val limiterReleaseMs: Float = 50f,
+    val limiterReleaseMs: Float = 40f,
     val stereoWidthPercent: Float = 100f,
     val stereoBalance: Float = 0f
 ) {
     fun sanitized(): EqAudioProfile {
-        val cleanBands = bands.take(NativeDspBridge.MAX_PARAMETRIC_BANDS).map(EqBandParameter::sanitized)
-        val paddedBands = cleanBands + defaultEqBands().drop(cleanBands.size)
+        val cleanBands = bands.take(NativeDspBridge.MAX_PARAMETRIC_BANDS)
+            .map(EqBandParameter::sanitized)
         return copy(
-            bands = paddedBands,
+            bands = cleanBands + defaultEqBands().drop(cleanBands.size),
             preampGainDb = preampGainDb.takeIf(Float::isFinite)?.coerceIn(-24f, 12f) ?: 0f,
-            bassGainDb = bassGainDb.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f,
-            trebleGainDb = trebleGainDb.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f,
-            limiterThresholdDb = limiterThresholdDb.takeIf(Float::isFinite)?.coerceIn(-12f, 0f) ?: -0.8f,
+            bassGainDb = bassGainDb.takeIf(Float::isFinite)?.coerceIn(0f, 12f) ?: 0f,
+            trebleGainDb = trebleGainDb.takeIf(Float::isFinite)?.coerceIn(0f, 12f) ?: 0f,
+            bassFrequencyHz = bassFrequencyHz.takeIf(Float::isFinite)?.coerceIn(20f, 250f) ?: 85f,
+            bassQFactor = bassQFactor.takeIf(Float::isFinite)?.coerceIn(0.5f, 2f) ?: 0.8f,
+            trebleFrequencyHz = trebleFrequencyHz.takeIf(Float::isFinite)?.coerceIn(4_000f, 16_000f) ?: 10_000f,
+            trebleQFactor = trebleQFactor.takeIf(Float::isFinite)?.coerceIn(0.5f, 2f) ?: 0.8f,
+            bandsOverlapPercent = bandsOverlapPercent.takeIf(Float::isFinite)?.coerceIn(0f, 100f) ?: 35f,
+            limiterThresholdDb = limiterThresholdDb.takeIf(Float::isFinite)?.coerceIn(-12f, 0f) ?: -0.5f,
             limiterKneeDb = limiterKneeDb.takeIf(Float::isFinite)?.coerceIn(0f, 12f) ?: 6f,
             limiterLookAheadMs = limiterLookAheadMs.takeIf(Float::isFinite)?.coerceIn(0f, 20f) ?: 1f,
-            limiterReleaseMs = limiterReleaseMs.takeIf(Float::isFinite)?.coerceIn(10f, 300f) ?: 50f,
+            limiterReleaseMs = limiterReleaseMs.takeIf(Float::isFinite)?.coerceIn(10f, 300f) ?: 40f,
             stereoWidthPercent = stereoWidthPercent.takeIf(Float::isFinite)?.coerceIn(0f, 200f) ?: 100f,
             stereoBalance = stereoBalance.takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
         )

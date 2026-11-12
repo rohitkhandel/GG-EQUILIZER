@@ -34,6 +34,7 @@ import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
 
+/** Original custom Canvas rotary control with local drag state and a 20 ms DSP dispatch cap. */
 @Composable
 fun RotaryKnob(
     label: String,
@@ -44,12 +45,13 @@ fun RotaryKnob(
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     accent: Color = Color(0xFF42D9F5),
-    knobSize: Dp = 150.dp
+    knobSize: Dp = 145.dp,
+    resetOnDoubleTap: Boolean = true
 ) {
     val range = max(0.0001f, valueRange.endInclusive - valueRange.start)
     val localValue = remember(valueRange.start, valueRange.endInclusive) { mutableFloatStateOf(value) }
     val dragging = remember { mutableStateOf(false) }
-    val currentCallback = rememberUpdatedState(onValueChange)
+    val callback = rememberUpdatedState(onValueChange)
 
     LaunchedEffect(value) {
         if (!dragging.value) localValue.floatValue = value
@@ -60,171 +62,166 @@ fun RotaryKnob(
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Box(
             modifier = Modifier
                 .size(knobSize)
                 .pointerInput(valueRange.start, valueRange.endInclusive, defaultValue) {
-                    var dragStartValue = valueRange.start
-                    var accumulatedDrag = 0f
-                    var lastDispatchMs = 0L
+                    var startValue = valueRange.start
+                    var accumulated = 0f
+                    var lastDispatch = 0L
                     detectDragGestures(
                         onDragStart = {
                             dragging.value = true
-                            dragStartValue = localValue.floatValue
-                            accumulatedDrag = 0f
-                            lastDispatchMs = 0L
+                            startValue = localValue.floatValue
+                            accumulated = 0f
+                            lastDispatch = 0L
                         },
-                        onDrag = { change, dragAmount ->
+                        onDrag = { change, amount ->
                             change.consume()
-                            accumulatedDrag -= dragAmount.y
-                            val next = (dragStartValue + accumulatedDrag / 205f * range)
+                            accumulated -= amount.y
+                            val next = (startValue + accumulated / 210f * range)
                                 .coerceIn(valueRange.start, valueRange.endInclusive)
                             localValue.floatValue = next
                             val now = SystemClock.uptimeMillis()
-                            if (lastDispatchMs == 0L || now - lastDispatchMs >= 20L) {
-                                currentCallback.value(next)
-                                lastDispatchMs = now
+                            if (lastDispatch == 0L || now - lastDispatch >= 20L) {
+                                callback.value(next)
+                                lastDispatch = now
                             }
                         },
                         onDragEnd = {
-                            currentCallback.value(localValue.floatValue)
+                            callback.value(localValue.floatValue)
                             dragging.value = false
                         },
                         onDragCancel = {
-                            currentCallback.value(localValue.floatValue)
+                            callback.value(localValue.floatValue)
                             dragging.value = false
                         }
                     )
                 }
-                .pointerInput(defaultValue, valueRange.start, valueRange.endInclusive) {
-                    detectTapGestures(
-                        onDoubleTap = {
-                            localValue.floatValue = defaultValue
-                            currentCallback.value(defaultValue)
-                            dragging.value = false
-                        }
-                    )
+                .pointerInput(defaultValue, resetOnDoubleTap) {
+                    if (resetOnDoubleTap) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                localValue.floatValue = defaultValue
+                                callback.value(defaultValue)
+                                dragging.value = false
+                            }
+                        )
+                    }
                 },
             contentAlignment = Alignment.Center
         ) {
             Canvas(Modifier.size(knobSize)) {
-                val radius = size.minDimension * 0.46f
-                val centerPoint = Offset(center.x, center.y)
-                drawCircle(Color(0xFF000000).copy(alpha = 0.46f), radius, centerPoint + Offset(0f, 2.dp.toPx()))
+                val radius = size.minDimension * 0.43f
+                val c = center
+                drawCircle(Color.Black.copy(alpha = 0.48f), radius, c + Offset(0f, 2.dp.toPx()))
                 drawCircle(
                     Brush.radialGradient(
-                        listOf(Color(0xFF56616D), Color(0xFF202832), Color(0xFF0B0F14)),
-                        center = centerPoint,
+                        listOf(Color(0xFF65717E), Color(0xFF2B343F), Color(0xFF0D1117)),
+                        center = c,
                         radius = radius
                     ),
-                    radius * 0.88f,
-                    centerPoint
+                    radius * 0.91f,
+                    c
                 )
                 drawCircle(
                     Brush.linearGradient(
-                        listOf(Color(0xFF8E9AA6), Color(0xFF303A45), Color(0xFF11161D))
+                        listOf(Color(0xFF9EA9B5), Color(0xFF37424E), Color(0xFF121820))
                     ),
-                    radius * 0.88f,
-                    centerPoint,
+                    radius * 0.91f,
+                    c,
                     style = Stroke(width = 2.dp.toPx())
                 )
                 drawCircle(
-                    Color(0xFF74808D).copy(alpha = 0.50f),
-                    radius * 0.76f,
-                    centerPoint,
+                    Color(0xFF8794A2).copy(alpha = 0.44f),
+                    radius * 0.78f,
+                    c,
                     style = Stroke(width = 1.dp.toPx())
                 )
 
-                val arcSize = radius * 1.70f
-                val arcTopLeft = Offset(center.x - arcSize / 2f, center.y - arcSize / 2f)
-                val arcStroke = (size.minDimension * 0.052f).coerceAtLeast(4.dp.toPx())
+                val arcSize = radius * 1.82f
+                val arcTop = Offset(c.x - arcSize / 2f, c.y - arcSize / 2f)
+                val arcStroke = (size.minDimension * 0.045f).coerceAtLeast(3.dp.toPx())
                 drawArc(
-                    Color(0xFF27323E),
-                    135f,
-                    270f,
-                    false,
-                    arcTopLeft,
-                    Size(arcSize, arcSize),
+                    Color(0xFF28323D),
+                    135f, 270f, false,
+                    arcTop, Size(arcSize, arcSize),
                     style = Stroke(arcStroke, cap = StrokeCap.Round)
                 )
                 drawArc(
-                    accent.copy(alpha = 0.22f),
-                    135f,
-                    270f * normalized,
-                    false,
-                    arcTopLeft,
-                    Size(arcSize, arcSize),
+                    accent.copy(alpha = 0.20f),
+                    135f, 270f * normalized, false,
+                    arcTop, Size(arcSize, arcSize),
                     style = Stroke(arcStroke + 5.dp.toPx(), cap = StrokeCap.Round)
                 )
                 drawArc(
                     accent,
-                    135f,
-                    270f * normalized,
-                    false,
-                    arcTopLeft,
-                    Size(arcSize, arcSize),
+                    135f, 270f * normalized, false,
+                    arcTop, Size(arcSize, arcSize),
                     style = Stroke(arcStroke, cap = StrokeCap.Round)
                 )
 
-                val tickOuter = radius * 1.10f
-                val tickInner = radius * 0.98f
-                for (index in 0..30) {
-                    val progress = index / 30f
+                for (tick in 0..30) {
+                    val progress = tick / 30f
                     val angle = (135.0 + progress * 270.0) * PI / 180.0
+                    val outerRadius = radius * 1.10f
+                    val innerRadius = radius * if (tick % 3 == 0) 0.97f else 1.01f
                     val outer = Offset(
-                        center.x + cos(angle).toFloat() * tickOuter,
-                        center.y + sin(angle).toFloat() * tickOuter
+                        c.x + cos(angle).toFloat() * outerRadius,
+                        c.y + sin(angle).toFloat() * outerRadius
                     )
                     val inner = Offset(
-                        center.x + cos(angle).toFloat() * tickInner,
-                        center.y + sin(angle).toFloat() * tickInner
+                        c.x + cos(angle).toFloat() * innerRadius,
+                        c.y + sin(angle).toFloat() * innerRadius
                     )
                     drawLine(
-                        if (progress <= normalized) accent else Color(0xFF697583),
+                        if (progress <= normalized) accent else Color(0xFF6A7684),
                         inner,
                         outer,
-                        if (index % 3 == 0) 1.8.dp.toPx() else 0.9.dp.toPx(),
+                        if (tick % 3 == 0) 1.8.dp.toPx() else 0.9.dp.toPx(),
                         cap = StrokeCap.Round
                     )
                 }
 
-                val needleAngle = (135.0 + normalized * 270.0) * PI / 180.0
-                val needleStart = Offset(
-                    center.x + cos(needleAngle).toFloat() * radius * 0.26f,
-                    center.y + sin(needleAngle).toFloat() * radius * 0.26f
+                val needle = (135.0 + normalized * 270.0) * PI / 180.0
+                val a = Offset(
+                    c.x + cos(needle).toFloat() * radius * 0.20f,
+                    c.y + sin(needle).toFloat() * radius * 0.20f
                 )
-                val needleEnd = Offset(
-                    center.x + cos(needleAngle).toFloat() * radius * 0.61f,
-                    center.y + sin(needleAngle).toFloat() * radius * 0.61f
+                val b = Offset(
+                    c.x + cos(needle).toFloat() * radius * 0.63f,
+                    c.y + sin(needle).toFloat() * radius * 0.63f
                 )
-                drawLine(accent.copy(alpha = 0.34f), needleStart, needleEnd, 7.dp.toPx(), StrokeCap.Round)
-                drawLine(accent, needleStart, needleEnd, 2.dp.toPx(), StrokeCap.Round)
-                drawCircle(Color(0xFFB9C2CA), radius * 0.055f, centerPoint)
+                drawLine(accent.copy(alpha = 0.32f), a, b, 7.dp.toPx(), StrokeCap.Round)
+                drawLine(accent, a, b, 2.dp.toPx(), StrokeCap.Round)
+                drawCircle(Color(0xFFC5CDD5), radius * 0.055f, c)
             }
+
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     valueText,
-                    color = Color(0xFFF4F7FA),
-                    fontSize = if (knobSize >= 120.dp) 23.sp else 13.sp,
+                    color = Color(0xFFF5F8FB),
+                    fontSize = if (knobSize >= 120.dp) 22.sp else 12.sp,
                     fontWeight = FontWeight.Black,
                     textAlign = TextAlign.Center,
                     maxLines = 1
                 )
                 Text(
                     "LEVEL",
-                    color = Color(0xFF8392A2),
+                    color = Color(0xFF8593A2),
                     fontSize = if (knobSize >= 120.dp) 7.sp else 6.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp
                 )
             }
         }
+
         Text(
             label.uppercase(),
-            color = Color(0xFFCAD4DE),
-            fontSize = if (knobSize >= 120.dp) 10.sp else 8.sp,
+            color = Color(0xFFD0D8E0),
+            fontSize = if (knobSize >= 120.dp) 10.sp else 7.sp,
             fontWeight = FontWeight.Black,
             textAlign = TextAlign.Center,
             maxLines = 1

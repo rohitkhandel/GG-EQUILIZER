@@ -2,55 +2,48 @@ package com.rohitkhandel.ggequalizer.ui
 
 import android.app.Application
 import android.content.Context
-import android.net.Uri
-import java.io.IOException
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import com.rohitkhandel.ggequalizer.audio.DvcManager
 import com.rohitkhandel.ggequalizer.audio.DvcSnapshot
 import com.rohitkhandel.ggequalizer.audio.EqAudioProfile
 import com.rohitkhandel.ggequalizer.audio.EqBandParameter
+import com.rohitkhandel.ggequalizer.audio.FftAnalyzer
 import com.rohitkhandel.ggequalizer.audio.GlobalEqController
 import com.rohitkhandel.ggequalizer.audio.GlobalEqSnapshot
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge
-import com.rohitkhandel.ggequalizer.audio.FftAnalyzer
 import com.rohitkhandel.ggequalizer.presets.EqDatabase
-import com.rohitkhandel.ggequalizer.presets.PresetEntity
 import com.rohitkhandel.ggequalizer.presets.PresetBackup
-import kotlinx.coroutines.flow.collect
+import com.rohitkhandel.ggequalizer.presets.PresetEntity
+import com.rohitkhandel.ggequalizer.presets.AutoEqParser
+import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
-import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.cos
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.exp
 import kotlin.math.ln
-import kotlin.math.log10
 import kotlin.math.pow
-import kotlin.math.sin
-import kotlin.math.sqrt
 
-/**
- * Owns screen state and forwards every live control change to the session
- * controller, which synchronizes both DynamicsProcessing and the native DSP
- * parameter engine. Frequency response is calculated using the same Cookbook
- * filter coefficient equations as the C++ biquad implementation.
- */
+/** Coordinates UI-local gestures, throttled DSP profile writes, presets and spectrum capture. */
 class EqViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         const val AUDIO_UPDATE_INTERVAL_MS = 20L
         const val RESPONSE_UPDATE_INTERVAL_MS = 24L
+        const val LN_2 = 0.69314718056f
     }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutableState = MutableStateFlow(EqUiState())
     val uiState: StateFlow<EqUiState> = mutableState.asStateFlow()
@@ -61,17 +54,16 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     private val presetDao = EqDatabase.getInstance(application).presetDao()
 
     private val globalListener: (GlobalEqSnapshot) -> Unit = { snapshot ->
-        val nextSessionId = snapshot.sessions.firstOrNull()?.sessionId
+        val nextSession = snapshot.sessions.firstOrNull()
         val previousSessionId = mutableState.value.activeSessionId
+        val packageName = snapshot.activePlayers.firstOrNull() ?: nextSession?.packageName
         mutableState.update { current ->
-            val packageName = snapshot.activePlayers.firstOrNull()
-                ?: snapshot.sessions.firstOrNull()?.packageName
             current.copy(
                 masterEnabled = snapshot.masterEnabled,
                 activePlayerPackage = packageName,
                 activePlayerName = resolvePlayerName(packageName),
                 activeSessionCount = snapshot.sessions.size,
-                activeSessionId = nextSessionId,
+                activeSessionId = nextSession?.sessionId,
                 attachmentSummary = snapshot.sessions
                     .groupBy { it.attachment }
                     .entries
@@ -79,17 +71,14 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
                     .ifBlank { "Waiting for an audio session" }
             )
         }
-        if (mutableState.value.visualizerEnabled && previousSessionId != nextSessionId) {
-            startSpectrumCapture(nextSessionId ?: 0)
+        if (mutableState.value.visualizerEnabled && previousSessionId != nextSession?.sessionId) {
+            startSpectrumCapture(nextSession?.sessionId ?: 0)
         }
     }
 
     private val dvcListener: (DvcSnapshot) -> Unit = { snapshot ->
         mutableState.update { current ->
-            current.copy(
-                dvcEnabled = snapshot.enabled,
-                dvcSnapshot = snapshot
-            )
+            current.copy(dvcEnabled = snapshot.enabled, dvcSnapshot = snapshot)
         }
     }
 
@@ -98,34 +87,33 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         GlobalEqController.addListener(globalListener)
         DvcManager.addGlobalListener(dvcListener)
         DvcManager.globalSnapshot()?.let(dvcListener)
+
         scope.launch {
             presetDao.observeAll().collect { presets ->
-                mutableState.update { current -> current.copy(presets = presets) }
+                mutableState.update { it.copy(presets = presets) }
             }
         }
+
         scope.launch(Dispatchers.Default) {
             var lastApplied = GlobalEqController.currentProfile()
             for (ignored in audioProfileUpdates) {
                 delay(AUDIO_UPDATE_INTERVAL_MS)
-                while (audioProfileUpdates.tryReceive().isSuccess) {
-                    // Keep only the latest complete UI profile for this interval.
-                }
+                while (audioProfileUpdates.tryReceive().isSuccess) Unit
                 val latest = mutableState.value.toAudioProfile()
                 applyAudioProfileDelta(lastApplied, latest)
                 lastApplied = latest
             }
         }
+
         scope.launch(Dispatchers.Default) {
             for (ignored in responseInvalidations) {
                 delay(RESPONSE_UPDATE_INTERVAL_MS)
-                while (responseInvalidations.tryReceive().isSuccess) {
-                    // Collapse rapid pointer events into one response calculation.
-                }
-                val snapshot = mutableState.value
-                val points = EqResponseCalculator.calculate(snapshot)
-                mutableState.update { current -> current.copy(responsePoints = points) }
+                while (responseInvalidations.tryReceive().isSuccess) Unit
+                val points = EqResponseCalculator.calculate(mutableState.value)
+                mutableState.update { it.copy(responsePoints = points) }
             }
         }
+
         recalculateResponse()
     }
 
@@ -135,15 +123,15 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setBandGain(index: Int, gainDb: Float) {
-        updateBand(index) { it.copy(gainDb = gainDb.coerceIn(-12.0f, 12.0f)) }
+        updateBand(index) { it.copy(gainDb = gainDb.coerceIn(-12f, 12f)) }
     }
 
     fun setBandFrequency(index: Int, frequencyHz: Float) {
-        updateBand(index) { it.copy(frequencyHz = frequencyHz.coerceIn(20.0f, 20_000.0f)) }
+        updateBand(index) { it.copy(frequencyHz = frequencyHz.coerceIn(20f, 20_000f)) }
     }
 
     fun setBandQ(index: Int, qFactor: Float) {
-        updateBand(index) { it.copy(qFactor = qFactor.coerceIn(0.1f, 10.0f)) }
+        updateBand(index) { it.copy(qFactor = qFactor.coerceIn(0.1f, 10f)) }
     }
 
     fun setBandFilterType(index: Int, filterType: Int) {
@@ -158,31 +146,52 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         if (index !in mutableState.value.bands.indices) return
         val updated = mutableState.value.bands[index].let(transform)
         mutableState.update { current ->
-            val bands = current.bands.toMutableList()
-            bands[index] = updated
-            current.copy(bands = bands)
+            val changed = current.bands.toMutableList()
+            changed[index] = updated
+            current.copy(bands = changed)
         }
         audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
     fun setPreampGain(gainDb: Float) {
-        val value = gainDb.coerceIn(-24.0f, 12.0f)
-        mutableState.update { it.copy(preampGainDb = value) }
+        mutableState.update { it.copy(preampGainDb = gainDb.coerceIn(-24f, 12f)) }
         audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
     fun setBassGain(gainDb: Float) {
-        val value = gainDb.coerceIn(-12.0f, 12.0f)
-        mutableState.update { it.copy(bassGainDb = value) }
+        mutableState.update { it.copy(bassGainDb = gainDb.coerceIn(0f, 12f)) }
         audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
     fun setTrebleGain(gainDb: Float) {
-        val value = gainDb.coerceIn(-12.0f, 12.0f)
-        mutableState.update { it.copy(trebleGainDb = value) }
+        mutableState.update { it.copy(trebleGainDb = gainDb.coerceIn(0f, 12f)) }
+        audioProfileUpdates.trySend(Unit)
+        recalculateResponse()
+    }
+
+    fun setBassFrequency(value: Float) {
+        mutableState.update { it.copy(bassFrequencyHz = value.coerceIn(20f, 250f)) }
+        audioProfileUpdates.trySend(Unit)
+        recalculateResponse()
+    }
+
+    fun setBassQ(value: Float) {
+        mutableState.update { it.copy(bassQFactor = value.coerceIn(0.5f, 2f)) }
+        audioProfileUpdates.trySend(Unit)
+        recalculateResponse()
+    }
+
+    fun setTrebleFrequency(value: Float) {
+        mutableState.update { it.copy(trebleFrequencyHz = value.coerceIn(4_000f, 16_000f)) }
+        audioProfileUpdates.trySend(Unit)
+        recalculateResponse()
+    }
+
+    fun setTrebleQ(value: Float) {
+        mutableState.update { it.copy(trebleQFactor = value.coerceIn(0.5f, 2f)) }
         audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
@@ -193,14 +202,44 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setLimiterThreshold(thresholdDb: Float) {
-        val value = thresholdDb.coerceIn(-12.0f, 0.0f)
-        mutableState.update { it.copy(limiterThresholdDb = value) }
+        mutableState.update { it.copy(limiterThresholdDb = thresholdDb.coerceIn(-12f, 0f)) }
         audioProfileUpdates.trySend(Unit)
     }
 
     fun setLimiterRelease(releaseMs: Float) {
-        val value = releaseMs.coerceIn(10.0f, 300.0f)
-        mutableState.update { it.copy(limiterReleaseMs = value) }
+        mutableState.update { it.copy(limiterReleaseMs = releaseMs.coerceIn(10f, 300f)) }
+        audioProfileUpdates.trySend(Unit)
+    }
+
+    fun setAvoidOverloading(enabled: Boolean) {
+        mutableState.update { it.copy(avoidOverloading = enabled) }
+        audioProfileUpdates.trySend(Unit)
+    }
+
+    fun setSmoothGains(enabled: Boolean) {
+        mutableState.update { it.copy(smoothGains = enabled) }
+        audioProfileUpdates.trySend(Unit)
+    }
+
+    fun setBandsOverlapEnabled(enabled: Boolean) {
+        mutableState.update { it.copy(bandsOverlapEnabled = enabled) }
+        audioProfileUpdates.trySend(Unit)
+        recalculateResponse()
+    }
+
+    fun setBandsOverlapPercent(percent: Float) {
+        mutableState.update { it.copy(bandsOverlapPercent = percent.coerceIn(0f, 100f)) }
+        audioProfileUpdates.trySend(Unit)
+        recalculateResponse()
+    }
+
+    fun setStereoWidthPercent(widthPercent: Float) {
+        mutableState.update { it.copy(stereoWidthPercent = widthPercent.coerceIn(0f, 200f)) }
+        audioProfileUpdates.trySend(Unit)
+    }
+
+    fun setStereoBalance(balance: Float) {
+        mutableState.update { it.copy(stereoBalance = balance.coerceIn(-1f, 1f)) }
         audioProfileUpdates.trySend(Unit)
     }
 
@@ -214,16 +253,38 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setStereoWidthPercent(widthPercent: Float) {
-        val value = widthPercent.coerceIn(0.0f, 200.0f)
-        mutableState.update { it.copy(stereoWidthPercent = value) }
-        audioProfileUpdates.trySend(Unit)
+    fun setDvcMode(mode: String) {
+        mutableState.update { it.copy(dvcMode = mode) }
     }
 
-    fun setStereoBalance(balance: Float) {
-        val value = balance.coerceIn(-1.0f, 1.0f)
-        mutableState.update { it.copy(stereoBalance = value) }
-        audioProfileUpdates.trySend(Unit)
+    fun setBandCount(count: Int) {
+        mutableState.update { it.copy(bandCount = count.coerceIn(10, 32)) }
+    }
+
+    fun setShowCurveOnSliders(enabled: Boolean) {
+        mutableState.update { it.copy(showCurveOnSliders = enabled) }
+    }
+
+    fun setAccentKey(key: String) {
+        mutableState.update { it.copy(accentKey = key) }
+    }
+
+    fun setAudioBlockSize(size: Int) {
+        mutableState.update { it.copy(audioBlockSize = size.coerceIn(2048, 8192)) }
+    }
+
+    fun setActivePlayerTracking(enabled: Boolean) {
+        mutableState.update { it.copy(activePlayerTracking = enabled) }
+    }
+
+    fun setVisualizerStyle(style: String) {
+        val clean = style.uppercase()
+        mutableState.update { it.copy(visualizerStyle = clean) }
+        if (clean == "OFF") {
+            setVisualizerEnabled(false)
+        } else if (!mutableState.value.visualizerEnabled) {
+            setVisualizerEnabled(true)
+        }
     }
 
     fun setVisualizerEnabled(enabled: Boolean) {
@@ -232,40 +293,40 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.update {
                 it.copy(
                     visualizerEnabled = false,
-                    spectrumBars = List(FftAnalyzer.BAR_COUNT) { 0.0f }
+                    visualizerStyle = if (it.visualizerStyle == "OFF") "OFF" else it.visualizerStyle,
+                    spectrumBars = List(FftAnalyzer.BAR_COUNT) { 0f }
                 )
             }
             return
+        }
+        if (mutableState.value.visualizerStyle == "OFF") {
+            mutableState.update { it.copy(visualizerStyle = "BARS") }
         }
         startSpectrumCapture(mutableState.value.activeSessionId ?: 0)
     }
 
     fun setVisualizerRefreshRate(rateHz: Int) {
-        val sanitized = rateHz.coerceIn(15, 60)
-        mutableState.update { it.copy(visualizerRefreshRateHz = sanitized) }
+        mutableState.update { it.copy(visualizerRefreshRateHz = rateHz.coerceIn(15, 60)) }
         if (mutableState.value.visualizerEnabled) {
             startSpectrumCapture(mutableState.value.activeSessionId ?: 0)
         }
     }
 
     private fun startSpectrumCapture(sessionId: Int) {
-        val requestedRefreshRate = mutableState.value.visualizerRefreshRateHz
-        val started = fftAnalyzer.start(sessionId, requestedRefreshRate) { bars ->
+        val rate = mutableState.value.visualizerRefreshRateHz
+        val started = fftAnalyzer.start(sessionId, rate) { bars ->
             scope.launch(Dispatchers.Main.immediate) {
                 mutableState.update { current ->
-                    if (current.visualizerEnabled) current.copy(spectrumBars = bars)
-                    else current
+                    if (current.visualizerEnabled) current.copy(spectrumBars = bars) else current
                 }
             }
         }
         mutableState.update { current ->
             current.copy(
                 visualizerEnabled = started,
-                activeSessionId = fftAnalyzer.attachedSessionId ?: current.activeSessionId,
-                spectrumBars = if (started) current.spectrumBars
-                else List(FftAnalyzer.BAR_COUNT) { 0.0f },
+                spectrumBars = if (started) current.spectrumBars else List(FftAnalyzer.BAR_COUNT) { 0f },
                 presetMessage = if (started) current.presetMessage
-                else "Spectrum capture unavailable. Check microphone permission or audio-session access."
+                else "Spectrum unavailable: check audio visualizer permission/session access."
             )
         }
     }
@@ -300,9 +361,7 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         audioProfileUpdates.trySend(Unit)
-        scope.launch(Dispatchers.Default) {
-            DvcManager.setGlobalEnabled(preset.dvcEnabled)
-        }
+        scope.launch(Dispatchers.Default) { DvcManager.setGlobalEnabled(preset.dvcEnabled) }
         recalculateResponse()
     }
 
@@ -321,12 +380,36 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         scope.launch { presetDao.upsert(preset) }
     }
 
+    fun importAutoEq(context: Context, uri: Uri) {
+        scope.launch(Dispatchers.IO) {
+            val result = runCatching { AutoEqParser.parseUri(context, uri) }
+            result.onSuccess { parsed ->
+                val current = mutableState.value
+                val preset = PresetEntity.fromProfile(
+                    presetId = "autoeq_${UUID.randomUUID()}",
+                    presetName = parsed.name,
+                    description = "Imported AutoEQ profile",
+                    profile = parsed.profile,
+                    stereoWidthPercent = current.stereoWidthPercent,
+                    stereoBalance = current.stereoBalance,
+                    dvcEnabled = current.dvcEnabled
+                )
+                presetDao.upsert(preset)
+                withContext(Dispatchers.Main.immediate) { applyPreset(preset) }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main.immediate) {
+                    mutableState.update { it.copy(presetMessage = error.message ?: "AutoEQ import failed") }
+                }
+            }
+        }
+    }
+
     fun saveCurrentPreset(name: String) {
         val current = mutableState.value
         val preset = PresetEntity.fromProfile(
             presetId = "custom_${UUID.randomUUID()}",
             presetName = name,
-            description = "Saved from current GG Equalizer settings",
+            description = "Saved from the current GG audio console",
             profile = current.toAudioProfile(),
             stereoWidthPercent = current.stereoWidthPercent,
             stereoBalance = current.stereoBalance,
@@ -334,7 +417,9 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         )
         scope.launch {
             presetDao.upsert(preset)
-            mutableState.update { it.copy(selectedPresetId = preset.presetId, presetMessage = "Saved ${preset.presetName}") }
+            mutableState.update {
+                it.copy(selectedPresetId = preset.presetId, presetMessage = "Saved ${preset.presetName}")
+            }
         }
     }
 
@@ -354,7 +439,7 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
                     current.copy(
                         presetMessage = result.fold(
                             onSuccess = { "Backed up $it presets" },
-                            onFailure = { error -> error.message ?: "Preset backup failed" }
+                            onFailure = { it.message ?: "Preset backup failed" }
                         )
                     )
                 }
@@ -377,7 +462,7 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
                     current.copy(
                         presetMessage = result.fold(
                             onSuccess = { "Restored $it presets" },
-                            onFailure = { error -> error.message ?: "Preset restore failed" }
+                            onFailure = { it.message ?: "Preset restore failed" }
                         )
                     )
                 }
@@ -395,36 +480,58 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetBand(index: Int) {
         if (index !in mutableState.value.bands.indices) return
-        val defaults = EqUiState().bands[index]
-        updateBand(index) { defaults }
+        updateBand(index) { EqUiState().bands[index] }
     }
 
     fun resetToneAndPreamp() {
         mutableState.update {
-            it.copy(preampGainDb = 0.0f, bassGainDb = 0.0f, trebleGainDb = 0.0f)
+            it.copy(
+                preampGainDb = 0f,
+                bassGainDb = 0f,
+                trebleGainDb = 0f,
+                bassFrequencyHz = 85f,
+                bassQFactor = 0.8f,
+                trebleFrequencyHz = 10_000f,
+                trebleQFactor = 0.8f,
+                stereoWidthPercent = 100f,
+                stereoBalance = 0f
+            )
         }
         audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
-    fun resetAllBands() {
-        val defaults = EqUiState().bands
-        mutableState.update { it.copy(bands = defaults, selectedBandIndex = 15) }
+    fun resetAll() {
+        mutableState.update {
+            it.copy(
+                bands = EqUiState().bands,
+                selectedBandIndex = 15,
+                preampGainDb = 0f,
+                bassGainDb = 0f,
+                trebleGainDb = 0f,
+                bassFrequencyHz = 85f,
+                bassQFactor = 0.8f,
+                trebleFrequencyHz = 10_000f,
+                trebleQFactor = 0.8f,
+                stereoWidthPercent = 100f,
+                stereoBalance = 0f,
+                selectedPresetId = null,
+                presetMessage = "Reset to flat"
+            )
+        }
         audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
     private fun resolvePlayerName(packageName: String?): String {
         if (packageName.isNullOrBlank()) return "No player detected"
-        val knownName = when (packageName) {
-            "com.spotify.music" -> "Spotify"
-            "com.google.android.apps.youtube.music" -> "YouTube Music"
-            "com.google.android.youtube" -> "YouTube"
-            "com.pubg.imobile" -> "BGMI"
-            "com.tencent.ig" -> "PUBG MOBILE"
-            else -> null
+        when (packageName) {
+            "com.spotify.music" -> return "Spotify"
+            "com.google.android.apps.youtube.music" -> return "YouTube Music"
+            "com.google.android.youtube" -> return "YouTube"
+            "com.pubg.imobile" -> return "BGMI"
+            "com.tencent.ig" -> return "PUBG MOBILE"
         }
-        if (knownName != null) return knownName
         return runCatching {
             val manager = getApplication<Application>().packageManager
             val info = if (android.os.Build.VERSION.SDK_INT >= 33) {
@@ -450,21 +557,39 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
             previous.bands.getOrNull(index) != next.bands.getOrNull(index)
         }
 
-        // Bulk preset/reset operations use one full profile commit. Single-band
-        // drags update only the changed band and avoid 32 JNI writes per tick.
         if (changedBands.size > 2 || previous.bands.size != next.bands.size) {
             GlobalEqController.setProfile(next)
             return
         }
+        if (previous.enabled != next.enabled) GlobalEqController.setMasterEnabled(next.enabled)
+        changedBands.forEach { index -> GlobalEqController.setBand(index, next.bands[index]) }
 
-        if (previous.enabled != next.enabled) {
-            GlobalEqController.setMasterEnabled(next.enabled)
-        }
-        changedBands.forEach { index ->
-            GlobalEqController.setBand(index, next.bands[index])
-        }
         if (previous.bassGainDb != next.bassGainDb || previous.trebleGainDb != next.trebleGainDb) {
             GlobalEqController.setTone(next.bassGainDb, next.trebleGainDb)
+        }
+        if (previous.bassFrequencyHz != next.bassFrequencyHz ||
+            previous.bassQFactor != next.bassQFactor ||
+            previous.trebleFrequencyHz != next.trebleFrequencyHz ||
+            previous.trebleQFactor != next.trebleQFactor
+        ) {
+            GlobalEqController.setToneParameters(
+                next.bassFrequencyHz,
+                next.bassQFactor,
+                next.trebleFrequencyHz,
+                next.trebleQFactor
+            )
+        }
+        if (previous.smoothGains != next.smoothGains ||
+            previous.bandsOverlapEnabled != next.bandsOverlapEnabled ||
+            previous.bandsOverlapPercent != next.bandsOverlapPercent ||
+            previous.avoidOverloading != next.avoidOverloading
+        ) {
+            GlobalEqController.setDspOptions(
+                next.smoothGains,
+                next.bandsOverlapEnabled,
+                next.bandsOverlapPercent,
+                next.avoidOverloading
+            )
         }
         if (previous.preampGainDb != next.preampGainDb) {
             GlobalEqController.setPreampGain(next.preampGainDb)
@@ -496,169 +621,74 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         scope.cancel()
         super.onCleared()
     }
+
+    private fun EqUiState.toAudioProfile(): EqAudioProfile = EqAudioProfile(
+        enabled = masterEnabled,
+        bands = bands.map(EqBandUiState::toAudioParameter),
+        preampGainDb = preampGainDb,
+        bassGainDb = bassGainDb,
+        trebleGainDb = trebleGainDb,
+        bassFrequencyHz = bassFrequencyHz,
+        bassQFactor = bassQFactor,
+        trebleFrequencyHz = trebleFrequencyHz,
+        trebleQFactor = trebleQFactor,
+        smoothGains = smoothGains,
+        bandsOverlapEnabled = bandsOverlapEnabled,
+        bandsOverlapPercent = bandsOverlapPercent,
+        avoidOverloading = avoidOverloading,
+        limiterEnabled = limiterEnabled,
+        limiterThresholdDb = limiterThresholdDb,
+        limiterReleaseMs = limiterReleaseMs,
+        stereoWidthPercent = stereoWidthPercent,
+        stereoBalance = stereoBalance
+    ).sanitized()
 }
 
-/** Cookbook IIR transfer-function response for a cascade of biquad sections. */
-private fun EqUiState.toAudioProfile(): EqAudioProfile = EqAudioProfile(
-    enabled = masterEnabled,
-    bands = bands.map(EqBandUiState::toAudioParameter),
-    preampGainDb = preampGainDb,
-    bassGainDb = bassGainDb,
-    trebleGainDb = trebleGainDb,
-    limiterEnabled = limiterEnabled,
-    limiterThresholdDb = limiterThresholdDb,
-    limiterReleaseMs = limiterReleaseMs,
-    stereoWidthPercent = stereoWidthPercent,
-    stereoBalance = stereoBalance
-).sanitized()
-
 private object EqResponseCalculator {
-    private const val SAMPLE_RATE = 48_000.0
-    private const val PI_D = PI
-
-    private data class Coeff(
-        val b0: Double,
-        val b1: Double,
-        val b2: Double,
-        val a1: Double,
-        val a2: Double
-    )
-
     fun calculate(state: EqUiState): List<FrequencyResponsePoint> {
         val sampleCount = 220
-        val enabledBands = state.bands.filter { it.enabled }.map { band ->
-            coefficients(
-                band.filterType,
-                band.frequencyHz.toDouble(),
-                band.gainDb.toDouble(),
-                band.qFactor.toDouble()
-            )
-        }
-        val bass = coefficients(1, 120.0, state.bassGainDb.toDouble(), 1.0)
-        val treble = coefficients(2, 8_000.0, state.trebleGainDb.toDouble(), 1.0)
-
+        val ordered = state.bands.sortedBy { it.frequencyHz }
+        val coupling = if (state.bandsOverlapEnabled) state.bandsOverlapPercent / 100f * 0.35f else 0f
         return List(sampleCount) { index ->
-            val progress = index.toDouble() / (sampleCount - 1).toDouble()
-            val frequency = 20.0 * 1000.0.pow(progress)
-            var gainDb = if (state.masterEnabled) state.preampGainDb.toDouble() else 0.0
+            val t = index.toDouble() / (sampleCount - 1).toDouble()
+            val frequency = (20.0 * 1000.0.pow(t)).toFloat()
+            var gain = if (state.masterEnabled) state.preampGainDb else 0f
 
             if (state.masterEnabled) {
-                enabledBands.forEach { gainDb += magnitudeDb(it, frequency) }
-                gainDb += magnitudeDb(bass, frequency)
-                gainDb += magnitudeDb(treble, frequency)
-            }
-
-            FrequencyResponsePoint(
-                frequencyHz = frequency.toFloat(),
-                gainDb = gainDb.coerceIn(-30.0, 30.0).toFloat()
-            )
-        }
-    }
-
-    private fun coefficients(
-        filterType: Int,
-        frequencyHz: Double,
-        gainDb: Double,
-        qFactor: Double
-    ): Coeff {
-        if (abs(gainDb) < 0.0001) return Coeff(1.0, 0.0, 0.0, 0.0, 0.0)
-
-        val frequency = frequencyHz.coerceIn(10.0, SAMPLE_RATE * 0.49)
-        val gain = gainDb.coerceIn(-24.0, 24.0)
-        val q = qFactor.coerceIn(0.1, 10.0)
-        val amplitude = 10.0.pow(gain / 40.0)
-        val omega = 2.0 * PI_D * frequency / SAMPLE_RATE
-        val cosine = cos(omega)
-        val sine = sin(omega)
-
-        var b0: Double
-        var b1: Double
-        var b2: Double
-        var a0: Double
-        var a1: Double
-        var a2: Double
-
-        when (filterType) {
-            NativeDspBridge.FILTER_LOW_SHELF,
-            NativeDspBridge.FILTER_HIGH_SHELF -> {
-                val shelfSlope = (1.0 / q).coerceIn(0.1, 1.0)
-                val radicand =
-                    (amplitude + 1.0 / amplitude) * (1.0 / shelfSlope - 1.0) + 2.0
-                val shelfAlpha = sine / 2.0 * sqrt(radicand.coerceAtLeast(0.0))
-                val beta = 2.0 * sqrt(amplitude) * shelfAlpha
-
-                if (filterType == NativeDspBridge.FILTER_LOW_SHELF) {
-                    b0 = amplitude * ((amplitude + 1.0) -
-                        (amplitude - 1.0) * cosine + beta)
-                    b1 = 2.0 * amplitude * ((amplitude - 1.0) -
-                        (amplitude + 1.0) * cosine)
-                    b2 = amplitude * ((amplitude + 1.0) -
-                        (amplitude - 1.0) * cosine - beta)
-                    a0 = (amplitude + 1.0) +
-                        (amplitude - 1.0) * cosine + beta
-                    a1 = -2.0 * ((amplitude - 1.0) +
-                        (amplitude + 1.0) * cosine)
-                    a2 = (amplitude + 1.0) +
-                        (amplitude - 1.0) * cosine - beta
-                } else {
-                    b0 = amplitude * ((amplitude + 1.0) +
-                        (amplitude - 1.0) * cosine + beta)
-                    b1 = -2.0 * amplitude * ((amplitude - 1.0) +
-                        (amplitude + 1.0) * cosine)
-                    b2 = amplitude * ((amplitude + 1.0) +
-                        (amplitude - 1.0) * cosine - beta)
-                    a0 = (amplitude + 1.0) -
-                        (amplitude - 1.0) * cosine + beta
-                    a1 = 2.0 * ((amplitude - 1.0) -
-                        (amplitude + 1.0) * cosine)
-                    a2 = (amplitude + 1.0) -
-                        (amplitude - 1.0) * cosine - beta
+                val sigmaBase = if (state.smoothGains) 0.24f else 0.12f
+                ordered.forEachIndexed { bandIndex, band ->
+                    if (!band.enabled) return@forEachIndexed
+                    val sigma = (
+                        sigmaBase / band.qFactor.coerceIn(0.1f, 10f).coerceIn(0.55f, 1.8f) +
+                            coupling * 0.36f
+                        ).coerceIn(0.09f, 0.62f)
+                    val distance = ln((frequency / band.frequencyHz).coerceAtLeast(0.0001f)) / 0.69314718056f
+                    var weight = exp(-0.5f * (distance / sigma).pow(2))
+                    if (coupling > 0f) {
+                        ordered.getOrNull(bandIndex - 1)?.let { prev ->
+                            val prevD = ln((frequency / prev.frequencyHz).coerceAtLeast(0.0001f)) / 0.69314718056f
+                            weight += coupling * exp(-0.5f * (prevD / (sigma * 1.1f)).pow(2))
+                        }
+                        ordered.getOrNull(bandIndex + 1)?.let { next ->
+                            val nextD = ln((frequency / next.frequencyHz).coerceAtLeast(0.0001f)) / 0.69314718056f
+                            weight += coupling * exp(-0.5f * (nextD / (sigma * 1.1f)).pow(2))
+                        }
+                    }
+                    gain += band.gainDb * weight
                 }
+
+                val bassOctaves = ln((frequency / state.bassFrequencyHz).coerceAtLeast(0.0001f)) / 0.69314718056f
+                val bassSlope = (0.62f / state.bassQFactor).coerceIn(0.30f, 1.30f)
+                gain += state.bassGainDb / 12f * 16f /
+                    (1f + exp(bassOctaves / bassSlope))
+
+                val trebleOctaves = ln((frequency / state.trebleFrequencyHz).coerceAtLeast(0.0001f)) / 0.69314718056f
+                val trebleSlope = (0.62f / state.trebleQFactor).coerceIn(0.30f, 1.30f)
+                gain += state.trebleGainDb / 12f * 12f /
+                    (1f + exp(-trebleOctaves / trebleSlope))
             }
-            else -> {
-                val alpha = sine / (2.0 * q)
-                b0 = 1.0 + alpha * amplitude
-                b1 = -2.0 * cosine
-                b2 = 1.0 - alpha * amplitude
-                a0 = 1.0 + alpha / amplitude
-                a1 = -2.0 * cosine
-                a2 = 1.0 - alpha / amplitude
-            }
+
+            FrequencyResponsePoint(frequency, gain.coerceIn(-36f, 36f))
         }
-
-        if (abs(a0) < 1.0e-12) return Coeff(1.0, 0.0, 0.0, 0.0, 0.0)
-        val inverse = 1.0 / a0
-        return Coeff(
-            b0 * inverse,
-            b1 * inverse,
-            b2 * inverse,
-            a1 * inverse,
-            a2 * inverse
-        )
-    }
-
-    private fun magnitudeDb(coeff: Coeff, frequencyHz: Double): Double {
-        val omega = 2.0 * PI_D * frequencyHz / SAMPLE_RATE
-        val c1 = cos(omega)
-        val s1 = sin(omega)
-        val c2 = cos(2.0 * omega)
-        val s2 = sin(2.0 * omega)
-
-        val numeratorReal = coeff.b0 + coeff.b1 * c1 + coeff.b2 * c2
-        val numeratorImaginary = -coeff.b1 * s1 - coeff.b2 * s2
-        val denominatorReal = 1.0 + coeff.a1 * c1 + coeff.a2 * c2
-        val denominatorImaginary = -coeff.a1 * s1 - coeff.a2 * s2
-
-        val numeratorMagnitude = sqrt(
-            numeratorReal * numeratorReal +
-                numeratorImaginary * numeratorImaginary
-        )
-        val denominatorMagnitude = sqrt(
-            denominatorReal * denominatorReal +
-                denominatorImaginary * denominatorImaginary
-        ).coerceAtLeast(1.0e-12)
-
-        val magnitude = (numeratorMagnitude / denominatorMagnitude).coerceAtLeast(1.0e-6)
-        return 20.0 * log10(magnitude)
     }
 }
