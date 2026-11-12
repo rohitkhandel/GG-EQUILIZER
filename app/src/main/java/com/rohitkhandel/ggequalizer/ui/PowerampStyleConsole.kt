@@ -6,7 +6,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +21,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
@@ -266,7 +267,7 @@ private fun StudioBandWorkspace(state: EqUiState, viewModel: EqViewModel, accent
             StudioGraphicBand(index, studioFormatHz(band.frequencyHz))
         } else studioGraphicBands(state.bands, state.bandCount)
     }
-    val scroll = rememberScrollState()
+    val scroll = rememberLazyListState()
     Row(Modifier.fillMaxSize().padding(start = 5.dp, end = 5.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(
             Modifier.width(45.dp).fillMaxHeight().clip(RoundedCornerShape(13.dp)).background(Color(0xFF111419))
@@ -281,21 +282,33 @@ private fun StudioBandWorkspace(state: EqUiState, viewModel: EqViewModel, accent
             Text(String.format(Locale.US, "%+.1f", state.preampGainDb), color = StudioText, fontSize = 7.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.width(4.dp))
-        Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            visibleBands.forEach { item ->
-                val band = state.bands.getOrNull(item.index) ?: return@forEach
-                StudioBandPanel(
-                    index = item.index, band = band, selected = item.index == state.selectedBandIndex,
-                    modifier = Modifier.width(194.dp).fillMaxHeight(),
-                    onSelect = { viewModel.selectBand(item.index) },
-                    onGain = { viewModel.setBandGain(item.index, it) },
-                    onFrequency = { viewModel.setBandFrequency(item.index, it) },
-                    onQ = { viewModel.setBandQ(item.index, it) },
-                    onFilter = { viewModel.setBandFilterType(item.index, it) },
-                    onEnabled = { viewModel.setBandEnabled(item.index, it) }
+        LazyRow(
+            state = scroll,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            itemsIndexed(visibleBands, key = { _, item -> item.index }) { _, item ->
+                val band = state.bands.getOrNull(item.index)
+                if (band != null) {
+                    StudioBandPanel(
+                        index = item.index, band = band, selected = item.index == state.selectedBandIndex,
+                        modifier = Modifier.width(194.dp).fillMaxHeight(),
+                        onSelect = { viewModel.selectBand(item.index) },
+                        onGain = { viewModel.setBandGain(item.index, it) },
+                        onFrequency = { viewModel.setBandFrequency(item.index, it) },
+                        onQ = { viewModel.setBandQ(item.index, it) },
+                        onFilter = { viewModel.setBandFilterType(item.index, it) },
+                        onEnabled = { viewModel.setBandEnabled(item.index, it) }
+                    )
+                }
+            }
+            item(key = "band-selector") {
+                StudioBandSelectorPanel(
+                    state, accent,
+                    { viewModel.setBandCount(32); viewModel.selectBand(it) },
+                    { viewModel.setBandCount(32) }
                 )
             }
-            StudioBandSelectorPanel(state, accent, { viewModel.setBandCount(32); viewModel.selectBand(it) }, { viewModel.setBandCount(32) })
         }
     }
 }
@@ -335,18 +348,23 @@ private fun StudioBandPanel(
                 modifier = Modifier.width(53.dp).fillMaxHeight(), onTouchStart = onSelect, onValueChange = onGain
             )
             Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
-                RotaryKnob(
-                    label = "Q", value = studioQProgress(band.qFactor), valueRange = 0f..1f,
-                    defaultValue = studioQProgress(1f), valueText = String.format(Locale.US, "%.2f", band.qFactor),
-                    onValueChange = { onQ(studioProgressQ(it)) }, onInteractionStart = onSelect,
-                    accent = StudioRed, knobSize = 82.dp, modifier = Modifier.fillMaxWidth()
-                )
-                RotaryKnob(
-                    label = "FREQ", value = studioFrequencyProgress(band.frequencyHz), valueRange = 0f..1f,
-                    defaultValue = studioFrequencyProgress(1_000f), valueText = studioFormatHz(band.frequencyHz),
-                    onValueChange = { onFrequency(studioProgressFrequency(it)) }, onInteractionStart = onSelect,
-                    accent = Color(0xFFE3E9EF), knobSize = 82.dp, modifier = Modifier.fillMaxWidth()
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    RotaryKnob(
+                        label = "Q", value = studioQProgress(band.qFactor), valueRange = 0f..1f,
+                        defaultValue = studioQProgress(1f), valueText = "",
+                        onValueChange = { onQ(studioProgressQ(it)) }, onInteractionStart = onSelect,
+                        accent = StudioRed, knobSize = 84.dp, modifier = Modifier.fillMaxWidth()
+                    )
+                    StudioValueBadge("Q", String.format(Locale.US, "%.2f", band.qFactor))
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    RotaryKnob(
+                        label = "FREQ", value = studioFrequencyProgress(band.frequencyHz), valueRange = 0f..1f,
+                        defaultValue = studioFrequencyProgress(1_000f), valueText = "",
+                        onValueChange = { onFrequency(studioProgressFrequency(it)) }, onInteractionStart = onSelect,
+                        accent = Color(0xFF59636D), knobSize = 84.dp, modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
         Row(Modifier.fillMaxWidth().height(43.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -520,8 +538,8 @@ private fun StudioGainFader(
             val yValue = bottom - valueFraction * usable
             val yZero = bottom - 0.5f * usable
             val track = if (compact) 2.dp.toPx() else 3.dp.toPx()
-            val capWidth = (size.width * 0.78f).coerceAtLeast(if (compact) 17.dp.toPx() else 24.dp.toPx())
-            val capHeight = if (compact) 9.dp.toPx() else 15.dp.toPx()
+            val capWidth = if (compact) 17.dp.toPx() else 25.dp.toPx()
+            val capHeight = if (compact) 9.dp.toPx() else 46.dp.toPx()
             drawLine(Color(0xFF353C45), Offset(center, top), Offset(center, bottom), track, StrokeCap.Round)
             drawLine(Color(0xFF7C8793).copy(alpha = 0.48f), Offset(center - 7.dp.toPx(), yZero), Offset(center + 7.dp.toPx(), yZero), 0.8.dp.toPx())
             drawLine(accent.copy(alpha = 0.19f), Offset(center, yZero), Offset(center, yValue), if (selected) 8.dp.toPx() else 5.dp.toPx(), StrokeCap.Round)
@@ -532,10 +550,21 @@ private fun StudioGainFader(
                 drawLine(Color(0xFF89939E).copy(alpha = if (tick % 3 == 0) 0.58f else 0.25f), Offset(center + 4.dp.toPx(), y), Offset(center + 4.dp.toPx() + length, y), 0.7.dp.toPx())
             }
             val capTop = yValue - capHeight / 2f
-            drawRoundRect(Color.Black.copy(alpha = 0.45f), Offset(center - capWidth / 2f, capTop + 1.5.dp.toPx()), Size(capWidth, capHeight + 1.dp.toPx()), CornerRadius(capHeight / 2f))
-            drawRoundRect(Brush.verticalGradient(listOf(Color(0xFFF0F3F5), Color(0xFF9DA7B1), Color(0xFF414A54))), Offset(center - capWidth / 2f, capTop), Size(capWidth, capHeight), CornerRadius(capHeight / 2f))
-            drawRoundRect(Color(0xFF252C34), Offset(center - capWidth / 2f, capTop), Size(capWidth, capHeight), CornerRadius(capHeight / 2f), style = Stroke(0.8.dp.toPx()))
-            drawLine(Color.White.copy(alpha = 0.82f), Offset(center - capWidth * 0.22f, yValue), Offset(center + capWidth * 0.22f, yValue), if (compact) 1.dp.toPx() else 1.7.dp.toPx(), StrokeCap.Round)
+            drawRoundRect(Color.Black.copy(alpha = 0.52f), Offset(center - capWidth / 2f, capTop + 1.5.dp.toPx()), Size(capWidth, capHeight + 1.dp.toPx()), CornerRadius(capWidth / 2f))
+            drawRoundRect(
+                Brush.verticalGradient(listOf(Color(0xFF3B424B), Color(0xFF191D22), Color(0xFF2D333B))),
+                Offset(center - capWidth / 2f, capTop),
+                Size(capWidth, capHeight),
+                CornerRadius(capWidth / 2f)
+            )
+            drawRoundRect(
+                Color(0xFF68727D),
+                Offset(center - capWidth / 2f, capTop),
+                Size(capWidth, capHeight),
+                CornerRadius(capWidth / 2f),
+                style = Stroke(1.dp.toPx())
+            )
+            drawLine(Color(0xFFE2E7EC), Offset(center - capWidth * 0.22f, yValue), Offset(center + capWidth * 0.22f, yValue), if (compact) 1.dp.toPx() else 2.dp.toPx(), StrokeCap.Round)
         }
         Text(label, color = if (selected) accent else StudioMuted, fontSize = if (compact) 6.sp else 7.sp, fontWeight = FontWeight.Black, maxLines = 1)
     }

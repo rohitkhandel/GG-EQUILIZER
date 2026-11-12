@@ -220,27 +220,31 @@ fun RotaryKnob(
                 drawCircle(Color(0xFFD8DEE5), radius * 0.055f, c)
             }
 
+            if (valueText.isNotBlank()) {
+                Text(
+                    valueText,
+                    color = Color(0xFFF4F6F8),
+                    fontSize = if (knobSize >= 105.dp) 13.sp else 8.sp,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
+            }
+        }
+
+        if (label.isNotBlank()) {
             Text(
-                valueText,
-                color = Color(0xFFF4F6F8),
-                fontSize = if (knobSize >= 105.dp) 13.sp else 8.sp,
+                label.uppercase(),
+                color = Color(0xFFD4DBE2),
+                fontSize = if (knobSize >= 105.dp) 8.sp else 6.sp,
                 fontWeight = FontWeight.Black,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 softWrap = false,
-                overflow = TextOverflow.Clip
+                overflow = TextOverflow.Ellipsis
             )
         }
-
-        Text(
-            label.uppercase(),
-            color = Color(0xFFD4DBE2),
-            fontSize = if (knobSize >= 105.dp) 8.sp else 6.sp,
-            fontWeight = FontWeight.Black,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis
-        )
     }
 }
