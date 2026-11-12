@@ -10,6 +10,11 @@ import com.rohitkhandel.ggequalizer.audio.EqBandParameter
 import com.rohitkhandel.ggequalizer.audio.GlobalEqController
 import com.rohitkhandel.ggequalizer.audio.GlobalEqSnapshot
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge
+import com.rohitkhandel.ggequalizer.audio.FftAnalyzer
+import com.rohitkhandel.ggequalizer.presets.EqDatabase
+import com.rohitkhandel.ggequalizer.presets.PresetEntity
+import kotlinx.coroutines.flow.collect
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,8 +47,12 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<EqUiState> = mutableState.asStateFlow()
 
     private var responseJob: Job? = null
+    private val fftAnalyzer = FftAnalyzer(application)
+    private val presetDao = EqDatabase.getInstance(application).presetDao()
 
     private val globalListener: (GlobalEqSnapshot) -> Unit = { snapshot ->
+        val nextSessionId = snapshot.sessions.firstOrNull()?.sessionId
+        val previousSessionId = mutableState.value.activeSessionId
         mutableState.update { current ->
             val packageName = snapshot.activePlayers.firstOrNull()
                 ?: snapshot.sessions.firstOrNull()?.packageName
@@ -52,12 +61,16 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
                 activePlayerPackage = packageName,
                 activePlayerName = resolvePlayerName(packageName),
                 activeSessionCount = snapshot.sessions.size,
+                activeSessionId = nextSessionId,
                 attachmentSummary = snapshot.sessions
                     .groupBy { it.attachment }
                     .entries
                     .joinToString(" · ") { "${it.key}: ${it.value.size}" }
                     .ifBlank { "Waiting for an audio session" }
             )
+        }
+        if (mutableState.value.visualizerEnabled && previousSessionId != nextSessionId) {
+            startSpectrumCapture(nextSessionId ?: 0)
         }
     }
 
@@ -75,6 +88,11 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         GlobalEqController.addListener(globalListener)
         DvcManager.addGlobalListener(dvcListener)
         DvcManager.globalSnapshot()?.let(dvcListener)
+        scope.launch {
+            presetDao.observeAll().collect { presets ->
+                mutableState.update { current -> current.copy(presets = presets) }
+            }
+        }
         recalculateResponse()
     }
 
@@ -174,6 +192,122 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
             ?: mutableState.update { it.copy(dvcEnabled = enabled) }
     }
 
+    fun setStereoWidthPercent(widthPercent: Float) {
+        val value = widthPercent.coerceIn(0.0f, 200.0f)
+        mutableState.update { it.copy(stereoWidthPercent = value) }
+        GlobalEqController.setStereoWidthPercent(value)
+    }
+
+    fun setStereoBalance(balance: Float) {
+        val value = balance.coerceIn(-1.0f, 1.0f)
+        mutableState.update { it.copy(stereoBalance = value) }
+        GlobalEqController.setStereoBalance(value)
+    }
+
+    fun setVisualizerEnabled(enabled: Boolean) {
+        if (!enabled) {
+            fftAnalyzer.stop()
+            mutableState.update {
+                it.copy(
+                    visualizerEnabled = false,
+                    spectrumBars = List(FftAnalyzer.BAR_COUNT) { 0.0f }
+                )
+            }
+            return
+        }
+        startSpectrumCapture(mutableState.value.activeSessionId ?: 0)
+    }
+
+    private fun startSpectrumCapture(sessionId: Int) {
+        val started = fftAnalyzer.start(sessionId) { bars ->
+            scope.launch(Dispatchers.Main.immediate) {
+                mutableState.update { current ->
+                    if (current.visualizerEnabled) current.copy(spectrumBars = bars)
+                    else current
+                }
+            }
+        }
+        mutableState.update { current ->
+            current.copy(
+                visualizerEnabled = started,
+                activeSessionId = fftAnalyzer.attachedSessionId ?: current.activeSessionId,
+                spectrumBars = if (started) current.spectrumBars
+                else List(FftAnalyzer.BAR_COUNT) { 0.0f },
+                presetMessage = if (started) current.presetMessage
+                else "Spectrum capture unavailable. Check microphone permission or audio-session access."
+            )
+        }
+    }
+
+    fun applyPreset(preset: PresetEntity) {
+        val profile = preset.toAudioProfile().copy(
+            stereoWidthPercent = preset.stereoWidthPercent,
+            stereoBalance = preset.stereoBalance
+        ).sanitized()
+        GlobalEqController.setProfile(profile)
+        DvcManager.setGlobalEnabled(preset.dvcEnabled)
+        DvcManager.globalSnapshot()?.let(dvcListener)
+        mutableState.update { current ->
+            current.copy(
+                bands = profile.bands.map { band ->
+                    EqBandUiState(
+                        frequencyHz = band.frequencyHz,
+                        gainDb = band.gainDb,
+                        qFactor = band.qFactor,
+                        filterType = band.filterType,
+                        enabled = band.enabled
+                    )
+                },
+                preampGainDb = profile.preampGainDb,
+                bassGainDb = profile.bassGainDb,
+                trebleGainDb = profile.trebleGainDb,
+                limiterEnabled = profile.limiterEnabled,
+                limiterThresholdDb = profile.limiterThresholdDb,
+                limiterReleaseMs = profile.limiterReleaseMs,
+                stereoWidthPercent = profile.stereoWidthPercent,
+                stereoBalance = profile.stereoBalance,
+                dvcEnabled = preset.dvcEnabled,
+                selectedPresetId = preset.presetId,
+                presetMessage = "Loaded ${preset.presetName}"
+            )
+        }
+        recalculateResponse()
+    }
+
+    fun applyImportedProfile(name: String, importedProfile: EqAudioProfile) {
+        val current = mutableState.value
+        val preset = PresetEntity.fromProfile(
+            presetId = "custom_${UUID.randomUUID()}",
+            presetName = name,
+            description = "Imported AutoEQ / JSON profile",
+            profile = importedProfile,
+            stereoWidthPercent = current.stereoWidthPercent,
+            stereoBalance = current.stereoBalance,
+            dvcEnabled = current.dvcEnabled
+        )
+        applyPreset(preset)
+        scope.launch { presetDao.upsert(preset) }
+    }
+
+    fun saveCurrentPreset(name: String) {
+        val current = mutableState.value
+        val preset = PresetEntity.fromProfile(
+            presetId = "custom_${UUID.randomUUID()}",
+            presetName = name,
+            description = "Saved from current GG Equalizer settings",
+            profile = current.toAudioProfile(),
+            stereoWidthPercent = current.stereoWidthPercent,
+            stereoBalance = current.stereoBalance,
+            dvcEnabled = current.dvcEnabled
+        )
+        scope.launch {
+            presetDao.upsert(preset)
+            mutableState.update { it.copy(selectedPresetId = preset.presetId, presetMessage = "Saved ${preset.presetName}") }
+        }
+    }
+
+    fun currentAudioProfile(): EqAudioProfile = mutableState.value.toAudioProfile()
+
     fun setMasterEnabled(enabled: Boolean) {
         GlobalEqController.setMasterEnabled(enabled)
         mutableState.update { it.copy(masterEnabled = enabled) }
@@ -251,6 +385,7 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        fftAnalyzer.stop()
         GlobalEqController.removeListener(globalListener)
         DvcManager.removeGlobalListener(dvcListener)
         scope.cancel()
@@ -259,6 +394,19 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 /** Cookbook IIR transfer-function response for a cascade of biquad sections. */
+private fun EqUiState.toAudioProfile(): EqAudioProfile = EqAudioProfile(
+    enabled = masterEnabled,
+    bands = bands.map(EqBandUiState::toAudioParameter),
+    preampGainDb = preampGainDb,
+    bassGainDb = bassGainDb,
+    trebleGainDb = trebleGainDb,
+    limiterEnabled = limiterEnabled,
+    limiterThresholdDb = limiterThresholdDb,
+    limiterReleaseMs = limiterReleaseMs,
+    stereoWidthPercent = stereoWidthPercent,
+    stereoBalance = stereoBalance
+).sanitized()
+
 private object EqResponseCalculator {
     private const val SAMPLE_RATE = 48_000.0
     private const val PI_D = PI
