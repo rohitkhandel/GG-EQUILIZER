@@ -169,7 +169,7 @@ fun StudioTopBar(
 
 @Composable
 fun StudioBottomDock(selected: String, accent: Color, onSelect: (String) -> Unit) {
-    val destinations = listOf("EQUALIZER" to "▥", "TONE" to "◉", "PRESETS" to "▦", "SETTINGS" to "⚙")
+    val destinations = listOf("EQUALIZER", "TONE", "PRESETS", "SETTINGS")
     Row(
         Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 9.dp, vertical = 4.dp)
             .height(54.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF17191D))
@@ -177,7 +177,7 @@ fun StudioBottomDock(selected: String, accent: Color, onSelect: (String) -> Unit
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        destinations.forEach { (key, icon) ->
+        destinations.forEach { key ->
             val active = selected == key
             Column(
                 Modifier.weight(1f).fillMaxHeight().padding(vertical = 5.dp)
@@ -186,8 +186,55 @@ fun StudioBottomDock(selected: String, accent: Color, onSelect: (String) -> Unit
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text(icon, color = if (active) accent else Color(0xFF8B929A), fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                StudioDockGlyph(key, active, accent)
                 Box(Modifier.padding(top = 1.dp).width(if (active) 12.dp else 3.dp).height(2.dp).clip(CircleShape).background(if (active) accent else Color.Transparent))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StudioDockGlyph(destination: String, active: Boolean, accent: Color) {
+    val tint = if (active) accent else Color(0xFF8B929A)
+    Canvas(Modifier.size(23.dp)) {
+        val w = size.width
+        val h = size.height
+        when (destination) {
+            "EQUALIZER" -> {
+                val heights = listOf(0.38f, 0.78f, 0.56f, 0.92f)
+                heights.forEachIndexed { index, fraction ->
+                    val barWidth = w * 0.14f
+                    val x = w * (0.10f + index * 0.23f)
+                    val barHeight = h * fraction
+                    drawRoundRect(
+                        tint,
+                        Offset(x, h - barHeight),
+                        Size(barWidth, barHeight),
+                        CornerRadius(barWidth / 2f)
+                    )
+                }
+            }
+            "TONE" -> {
+                drawCircle(tint.copy(alpha = 0.20f), w * 0.43f, center)
+                drawCircle(tint, w * 0.38f, center, style = Stroke(width = 2.dp.toPx()))
+                val needleEnd = Offset(center.x + w * 0.20f, center.y - h * 0.21f)
+                drawLine(tint, center, needleEnd, 2.4.dp.toPx(), cap = StrokeCap.Round)
+                drawCircle(tint, w * 0.055f, center)
+            }
+            "PRESETS" -> {
+                drawRoundRect(tint, Offset(w * 0.12f, h * 0.10f), Size(w * 0.76f, h * 0.80f), CornerRadius(3.dp.toPx()), style = Stroke(width = 1.8.dp.toPx()))
+                for (index in 0..2) {
+                    val y = h * (0.30f + index * 0.22f)
+                    drawCircle(tint, w * 0.045f, Offset(w * 0.28f, y))
+                    drawLine(tint, Offset(w * 0.40f, y), Offset(w * 0.77f, y), 1.8.dp.toPx(), cap = StrokeCap.Round)
+                }
+            }
+            else -> {
+                for (index in 0..2) {
+                    val y = h * (0.25f + index * 0.25f)
+                    drawLine(tint, Offset(w * 0.14f, y), Offset(w * 0.86f, y), 2.6.dp.toPx(), cap = StrokeCap.Round)
+                    drawCircle(tint, w * 0.075f, Offset(w * (if (index == 1) 0.36f else 0.66f), y))
+                }
             }
         }
     }
