@@ -480,7 +480,8 @@ object GlobalEqController {
                 index,
                 DynamicsProcessing.EqBand(
                     profile.enabled,
-                    centerFrequencyHz,
+                    // Android defines this as the topmost frequency for the zone.
+                    upperEdgeHz,
                     appliedGainDb
                 )
             )
