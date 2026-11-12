@@ -81,6 +81,33 @@ class EqResponseMathTest {
     }
 
     @Test
+    fun automaticHeadroomReservesTheFullPositiveEqPeak() {
+        val profile = EqAudioProfile.defaults().copy(
+            preampGainDb = 2f,
+            bassGainDb = 6f,
+            bassFrequencyHz = 100f,
+            avoidOverloading = true
+        )
+        val headroom = EqResponseMath.automaticHeadroomDb(profile)
+        val peak = (0..192).maxOf { index ->
+            val frequency = (20.0 * 1_000.0.pow(index / 192.0)).toFloat()
+            EqResponseMath.profileGainDb(profile, frequency, includePreamp = true)
+        }
+        assertTrue("Headroom must cover the complete positive peak plus its safety margin", headroom >= peak + 0.9f)
+    }
+
+    @Test
+    fun automaticHeadroomCanBeDisabledWithoutDisablingTheLimiter() {
+        val profile = EqAudioProfile.defaults().copy(
+            bassGainDb = 8f,
+            avoidOverloading = false,
+            limiterEnabled = true
+        )
+        assertEquals(0f, EqResponseMath.automaticHeadroomDb(profile), 0.001f)
+        assertTrue("Limiter remains independently enabled", profile.limiterEnabled)
+    }
+
+    @Test
     fun profileCombinesParametricAndToneFilters() {
         val profile = EqAudioProfile.defaults().copy(
             bands = listOf(

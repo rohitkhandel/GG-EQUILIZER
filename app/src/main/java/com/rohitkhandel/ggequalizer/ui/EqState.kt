@@ -31,6 +31,7 @@ data class FrequencyResponsePoint(
 
 data class EqUiState(
     val bands: List<EqBandUiState> = defaultEqBandUiStates(),
+    val parametricBandIndices: List<Int> = emptyList(),
     val selectedBandIndex: Int = 15,
     val preampGainDb: Float = 0f,
     val bassGainDb: Float = 0f,
@@ -97,7 +98,7 @@ private fun defaultEqBandUiStates(): List<EqBandUiState> =
  */
 internal fun EqUiState.activeBandIndices(): Set<Int> {
     if (bands.isEmpty()) return emptySet()
-    if (bandCount >= 32) return bands.indices.toSet()
+    if (bandCount >= 32) return parametricBandIndices.filter { it in bands.indices }.toSet()
 
     val targets = if (bandCount >= 15) {
         listOf(

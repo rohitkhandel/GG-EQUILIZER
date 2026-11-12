@@ -35,6 +35,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
+import kotlin.math.ln
 import kotlin.math.pow
 
 /** Coordinates UI-local gestures, throttled DSP profile writes, presets and spectrum capture. */
@@ -167,15 +169,102 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun updateBand(index: Int, transform: (EqBandUiState) -> EqBandUiState) {
-        if (index !in mutableState.value.bands.indices) return
-        val updated = mutableState.value.bands[index].let(transform)
+        var changedAny = false
         mutableState.update { current ->
+            if (index !in current.bands.indices) return@update current
             val changed = current.bands.toMutableList()
+            val updated = transform(changed[index])
+            if (updated == changed[index]) return@update current
+
             changed[index] = updated
-            current.copy(bands = changed)
+            changedAny = true
+            val orderedParametricIndices = if (index in current.parametricBandIndices) {
+                current.parametricBandIndices.sortedBy { changed[it].frequencyHz }
+            } else {
+                current.parametricBandIndices
+            }
+            current.copy(
+                bands = changed,
+                parametricBandIndices = orderedParametricIndices
+            )
         }
-        audioProfileUpdates.trySend(Unit)
-        recalculateResponse()
+        if (changedAny) {
+            audioProfileUpdates.trySend(Unit)
+            recalculateResponse()
+        }
+    }
+
+    fun addParametricBand() {
+        var added = false
+        mutableState.update { current ->
+            val existing = current.parametricBandIndices.toSet()
+            if (existing.size >= NativeDspBridge.MAX_PARAMETRIC_BANDS) return@update current
+
+            val suggestedFrequencies = listOf(
+                80f, 160f, 315f, 630f, 1_000f,
+                2_000f, 4_000f, 8_000f, 12_000f, 16_000f
+            )
+            val targetHz = suggestedFrequencies.getOrNull(existing.size)
+            val slot = current.bands.indices
+                .filterNot(existing::contains)
+                .minByOrNull { index ->
+                    if (targetHz == null) index.toFloat()
+                    else abs(ln(current.bands[index].frequencyHz.coerceAtLeast(1f) / targetHz))
+                } ?: return@update current
+
+            val changedBands = current.bands.toMutableList()
+            val selectedFrequency = targetHz ?: changedBands[slot].frequencyHz
+            changedBands[slot] = changedBands[slot].copy(
+                frequencyHz = selectedFrequency.coerceIn(20f, 20_000f),
+                gainDb = 0f,
+                qFactor = 1f,
+                filterType = NativeDspBridge.FILTER_PEAKING,
+                enabled = true
+            )
+            val nextIndices = (current.parametricBandIndices + slot)
+                .distinct()
+                .sortedBy { changedBands[it].frequencyHz }
+            added = true
+            current.copy(
+                bands = changedBands,
+                parametricBandIndices = nextIndices,
+                bandCount = 32,
+                selectedBandIndex = slot,
+                presetMessage = "Added filter ${nextIndices.size} of ${NativeDspBridge.MAX_PARAMETRIC_BANDS}"
+            )
+        }
+        if (added) {
+            audioProfileUpdates.trySend(Unit)
+            recalculateResponse()
+        }
+    }
+
+    fun removeSelectedParametricBand() {
+        var removed = false
+        mutableState.update { current ->
+            val selected = current.selectedBandIndex
+            if (selected !in current.parametricBandIndices) return@update current
+
+            val changedBands = current.bands.toMutableList()
+            changedBands[selected] = changedBands[selected].copy(
+                gainDb = 0f,
+                qFactor = 1f,
+                filterType = NativeDspBridge.FILTER_PEAKING,
+                enabled = false
+            )
+            val remaining = current.parametricBandIndices.filterNot { it == selected }
+            removed = true
+            current.copy(
+                bands = changedBands,
+                parametricBandIndices = remaining,
+                selectedBandIndex = remaining.firstOrNull() ?: 0,
+                presetMessage = "Removed filter · ${remaining.size} remaining"
+            )
+        }
+        if (removed) {
+            audioProfileUpdates.trySend(Unit)
+            recalculateResponse()
+        }
     }
 
     fun setPreampGain(gainDb: Float) {
@@ -425,6 +514,12 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
                         enabled = band.enabled
                     )
                 },
+                parametricBandIndices = profile.bands.indices
+                    .filter { profile.bands[it].enabled }
+                    .sortedBy { profile.bands[it].frequencyHz },
+                selectedBandIndex = profile.bands.indexOfFirst { it.enabled }.takeIf { it >= 0 }
+                    ?: current.selectedBandIndex,
+                bandCount = if (profile.bands.count { it.enabled } > 15) 32 else current.bandCount,
                 preampGainDb = profile.preampGainDb,
                 bassGainDb = profile.bassGainDb,
                 trebleGainDb = profile.trebleGainDb,
@@ -583,6 +678,8 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update {
             it.copy(
                 bands = EqUiState().bands,
+                parametricBandIndices = emptyList(),
+                bandCount = 10,
                 selectedBandIndex = 15,
                 preampGainDb = 0f,
                 bassGainDb = 0f,
@@ -702,7 +799,9 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun EqUiState.toAudioProfile(): EqAudioProfile = EqAudioProfile(
         enabled = masterEnabled,
-        bands = bands.map(EqBandUiState::toAudioParameter),
+        bands = bands.mapIndexed { index, band ->
+            band.toAudioParameter().copy(enabled = band.enabled && index in activeBandIndices())
+        },
         preampGainDb = preampGainDb,
         bassGainDb = bassGainDb,
         trebleGainDb = trebleGainDb,

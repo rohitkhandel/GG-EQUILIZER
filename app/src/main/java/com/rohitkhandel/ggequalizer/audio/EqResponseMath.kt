@@ -25,6 +25,27 @@ object EqResponseMath {
     private const val DEFAULT_SAMPLE_RATE_HZ = 48_000.0
     private const val MIN_MAGNITUDE = 1.0e-9
 
+    /**
+     * Reserves headroom for the strongest positive point in the complete EQ response.
+     * The small safety margin helps account for inter-sample peaks and Android effect
+     * implementations that do not provide a true-peak limiter.
+     */
+    fun automaticHeadroomDb(
+        profile: EqAudioProfile,
+        marginDb: Float = 1f,
+        maxCompensationDb: Float = 24f
+    ): Float {
+        if (!profile.avoidOverloading) return 0f
+
+        var peakDb = 0f
+        for (index in 0..192) {
+            val frequency = (20.0 * 1_000.0.pow(index / 192.0)).toFloat()
+            peakDb = max(peakDb, profileGainDb(profile, frequency, includePreamp = true))
+        }
+        if (peakDb <= 0f) return 0f
+        return (peakDb + marginDb.coerceIn(0f, 3f)).coerceIn(0f, maxCompensationDb.coerceIn(0f, 24f))
+    }
+
     fun profileGainDb(
         profile: EqAudioProfile,
         frequencyHz: Float,

@@ -362,11 +362,9 @@ object GlobalEqController {
         if (nativeHandle != 0L) syncNativeLocked()
     }
 
-    /** Reserve only the part of peak EQ/tone response that exceeds +8 dB. */
-    private fun automaticHeadroomDbLocked(): Float {
-        if (!profile.avoidOverloading) return 0f
-        return (estimatedPeakBoostDbLocked() - 8f).coerceIn(0f, 16f)
-    }
+    /** Reserve the complete positive EQ peak plus a small safety margin. */
+    private fun automaticHeadroomDbLocked(): Float =
+        EqResponseMath.automaticHeadroomDb(profile)
 
     private fun estimatedPeakBoostDbLocked(): Float {
         var peak = 0f
@@ -398,11 +396,11 @@ object GlobalEqController {
             NativeDspBridge.nativeSetStereoBalance(handle, profile.stereoBalance)
             NativeDspBridge.nativeSetLimiter(
                 handle,
-                profile.limiterEnabled && profile.avoidOverloading,
-                if (profile.avoidOverloading) -0.5f else profile.limiterThresholdDb,
+                profile.limiterEnabled,
+                profile.limiterThresholdDb,
                 profile.limiterKneeDb,
                 profile.limiterLookAheadMs,
-                if (profile.avoidOverloading) 40f else profile.limiterReleaseMs
+                profile.limiterReleaseMs
             )
         }.onFailure { Log.w(TAG, "Native DSP synchronization failed", it) }
     }
@@ -468,7 +466,7 @@ object GlobalEqController {
 
     @RequiresApi(Build.VERSION_CODES.P)
     private fun applyLimiterStagesLocked(effect: DynamicsProcessing) {
-        val protected = profile.enabled && profile.limiterEnabled && profile.avoidOverloading
+        val protected = profile.enabled && profile.limiterEnabled
         effect.setLimiterAllChannelsTo(
             DynamicsProcessing.Limiter(
                 true,
@@ -515,7 +513,7 @@ object GlobalEqController {
                 val range = eq.bandLevelRange
                 for (index in 0 until eq.numberOfBands.toInt()) {
                     val frequencyHz = (eq.getCenterFreq(index.toShort()) / 1000f).coerceAtLeast(1f)
-                    val gain = EqResponseMath.profileGainDb(profile, frequencyHz, includePreamp = true)
+                    val gain = EqResponseMath.profileGainDb(profile, frequencyHz) + effectivePreampDbLocked()
                     val level = (gain * 100f).toInt().coerceIn(range[0].toInt(), range[1].toInt())
                     eq.setBandLevel(index.toShort(), level.toShort())
                 }
@@ -570,7 +568,7 @@ object GlobalEqController {
         effectivePreampGainDb = effectivePreampDbLocked(),
         bassGainDb = profile.bassGainDb,
         trebleGainDb = profile.trebleGainDb,
-        limiterEnabled = profile.limiterEnabled && profile.avoidOverloading
+        limiterEnabled = profile.limiterEnabled
     )
 
     private fun publishSnapshot() {
