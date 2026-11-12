@@ -281,7 +281,14 @@ private fun StudioBandWorkspace(state: EqUiState, viewModel: EqViewModel, accent
                 compact = false, modifier = Modifier.weight(1f).fillMaxWidth(), fillFromTop = true,
                 onValueChange = viewModel::setPreampGain
             )
-            Text(String.format(Locale.US, "%+.1f", state.preampGainDb), color = StudioText, fontSize = 7.sp, fontWeight = FontWeight.Bold)
+            if (state.equalizerValueMode != "HIDDEN") {
+                Text(
+                    studioGainValueText(state.preampGainDb, state.equalizerValueMode),
+                    color = StudioText,
+                    fontSize = 7.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
         Spacer(Modifier.width(4.dp))
         LazyRow(

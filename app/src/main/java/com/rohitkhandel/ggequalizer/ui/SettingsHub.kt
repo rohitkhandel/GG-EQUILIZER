@@ -7,6 +7,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -141,6 +142,10 @@ fun SettingsHub(
             SettingsRoute.OVERVIEW -> SettingsRoute.OVERVIEW
             else -> SettingsRoute.OVERVIEW
         }
+    }
+
+    BackHandler(enabled = route != SettingsRoute.OVERVIEW) {
+        back()
     }
 
     Column(Modifier.fillMaxSize().background(HubBlack)) {
