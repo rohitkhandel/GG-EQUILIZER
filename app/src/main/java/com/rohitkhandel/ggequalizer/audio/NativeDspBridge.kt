@@ -59,6 +59,11 @@ object NativeDspBridge {
 
     /** DVC is a linear output multiplier constrained to 0.0..1.0. */
     external fun nativeSetDvcVolume(handle: Long, linearGain: Float): Boolean
+    /** M/S stereo width: 0% mono, 100% unchanged, 200% maximum expansion. */
+    external fun nativeSetStereoWidthPercent(handle: Long, widthPercent: Float): Boolean
+
+    /** Stereo balance: -1.0 hard left, 0.0 centre, +1.0 hard right. */
+    external fun nativeSetStereoBalance(handle: Long, balance: Float): Boolean
 
     /** Processes frameCount stereo frames in place; array length must be >= 2 * frameCount. */
     external fun nativeProcess(

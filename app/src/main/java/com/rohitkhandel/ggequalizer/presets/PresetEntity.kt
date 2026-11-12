@@ -48,7 +48,9 @@ data class PresetEntity(
             trebleGainDb = trebleGainDb,
             limiterEnabled = limiterEnabled,
             limiterThresholdDb = limiterThresholdDb,
-            limiterReleaseMs = limiterReleaseMs
+            limiterReleaseMs = limiterReleaseMs,
+            stereoWidthPercent = stereoWidthPercent,
+            stereoBalance = stereoBalance
         ).sanitized()
     }
 

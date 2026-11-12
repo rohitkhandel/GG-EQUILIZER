@@ -35,6 +35,8 @@ public:
     bool setPreampGain(float gainDb);
     bool setLimiterParameters(const LimiterParameters& parameters);
     bool setDvcVolume(float linearGain);
+    bool setStereoWidthPercent(float widthPercent);
+    bool setStereoBalance(float balance);
 
     bool process(float* interleavedStereo, std::size_t frameCount);
     void reset();
@@ -60,6 +62,8 @@ private:
     float bassGainDb_{0.0F};
     float trebleGainDb_{0.0F};
     float dvcVolume_{1.0F};
+    float stereoWidthPercent_{100.0F};
+    float stereoBalance_{0.0F};
 
     LimiterParameters limiterParameters_{};
     Limiter limiter_{};

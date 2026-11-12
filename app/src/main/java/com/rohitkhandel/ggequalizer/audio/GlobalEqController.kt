@@ -225,6 +225,24 @@ object GlobalEqController {
         publishSnapshot()
     }
 
+    fun setStereoWidthPercent(widthPercent: Float) {
+        if (!widthPercent.isFinite()) return
+        synchronized(lock) {
+            profile = profile.copy(stereoWidthPercent = widthPercent.coerceIn(0.0f, 200.0f))
+            syncNativeLocked()
+        }
+        publishSnapshot()
+    }
+
+    fun setStereoBalance(balance: Float) {
+        if (!balance.isFinite()) return
+        synchronized(lock) {
+            profile = profile.copy(stereoBalance = balance.coerceIn(-1.0f, 1.0f))
+            syncNativeLocked()
+        }
+        publishSnapshot()
+    }
+
     fun setProfile(newProfile: EqAudioProfile) {
         synchronized(lock) {
             profile = newProfile.sanitized()
@@ -278,6 +296,8 @@ object GlobalEqController {
             }
             NativeDspBridge.nativeSetTone(handle, profile.bassGainDb, profile.trebleGainDb)
             NativeDspBridge.nativeSetPreampGain(handle, effectivePreampDbLocked())
+            NativeDspBridge.nativeSetStereoWidthPercent(handle, profile.stereoWidthPercent)
+            NativeDspBridge.nativeSetStereoBalance(handle, profile.stereoBalance)
             NativeDspBridge.nativeSetLimiter(
                 handle,
                 profile.limiterEnabled,
@@ -527,7 +547,9 @@ data class EqAudioProfile(
     val limiterThresholdDb: Float = -1.0f,
     val limiterKneeDb: Float = 6.0f,
     val limiterLookAheadMs: Float = 5.0f,
-    val limiterReleaseMs: Float = 80.0f
+    val limiterReleaseMs: Float = 80.0f,
+    val stereoWidthPercent: Float = 100.0f,
+    val stereoBalance: Float = 0.0f
 ) {
     fun sanitized(): EqAudioProfile {
         val cleanBands = bands.take(NativeDspBridge.MAX_PARAMETRIC_BANDS)
@@ -541,7 +563,9 @@ data class EqAudioProfile(
             limiterThresholdDb = limiterThresholdDb.takeIf(Float::isFinite)?.coerceIn(-12.0f, 0.0f) ?: -1.0f,
             limiterKneeDb = limiterKneeDb.takeIf(Float::isFinite)?.coerceIn(0.0f, 12.0f) ?: 6.0f,
             limiterLookAheadMs = limiterLookAheadMs.takeIf(Float::isFinite)?.coerceIn(0.0f, 20.0f) ?: 5.0f,
-            limiterReleaseMs = limiterReleaseMs.takeIf(Float::isFinite)?.coerceIn(10.0f, 300.0f) ?: 80.0f
+            limiterReleaseMs = limiterReleaseMs.takeIf(Float::isFinite)?.coerceIn(10.0f, 300.0f) ?: 80.0f,
+            stereoWidthPercent = stereoWidthPercent.takeIf(Float::isFinite)?.coerceIn(0.0f, 200.0f) ?: 100.0f,
+            stereoBalance = stereoBalance.takeIf(Float::isFinite)?.coerceIn(-1.0f, 1.0f) ?: 0.0f
         )
     }
 

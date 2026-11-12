@@ -184,6 +184,30 @@ bool DspEngine::setDvcVolume(float linearGain) {
     return true;
 }
 
+bool DspEngine::setStereoWidthPercent(float widthPercent) {
+    if (!std::isfinite(widthPercent) ||
+        widthPercent < 0.0F ||
+        widthPercent > 200.0F) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    stereoWidthPercent_ = widthPercent;
+    return true;
+}
+
+bool DspEngine::setStereoBalance(float balance) {
+    if (!std::isfinite(balance) ||
+        balance < -1.0F ||
+        balance > 1.0F) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    stereoBalance_ = balance;
+    return true;
+}
+
 bool DspEngine::process(float* interleavedStereo, std::size_t frameCount) {
     if (interleavedStereo == nullptr && frameCount > 0U) {
         return false;
@@ -220,6 +244,19 @@ bool DspEngine::process(float* interleavedStereo, std::size_t frameCount) {
         right = rightBass_.processSample(right);
         left = leftTreble_.processSample(left);
         right = rightTreble_.processSample(right);
+
+        // Mid/Side width: 0% is mono, 100% is unchanged, 200% doubles side energy.
+        const float mid = (left + right) * 0.5F;
+        const float side = (left - right) * 0.5F * (stereoWidthPercent_ / 100.0F);
+        left = mid + side;
+        right = mid - side;
+
+        // Balance is attenuation-only: -1 = hard left, +1 = hard right.
+        if (stereoBalance_ > 0.0F) {
+            left *= (1.0F - stereoBalance_);
+        } else if (stereoBalance_ < 0.0F) {
+            right *= (1.0F + stereoBalance_);
+        }
 
         interleavedStereo[offset] = left;
         interleavedStereo[offset + 1U] = right;

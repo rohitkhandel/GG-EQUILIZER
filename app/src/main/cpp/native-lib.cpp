@@ -259,6 +259,38 @@ Java_com_rohitkhandel_ggequalizer_audio_NativeDspBridge_nativeSetDvcVolume(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_rohitkhandel_ggequalizer_audio_NativeDspBridge_nativeSetStereoWidthPercent(
+    JNIEnv*,
+    jobject,
+    jlong handle,
+    jfloat widthPercent) {
+    try {
+        const auto engine = findEngine(handle);
+        return engine && engine->setStereoWidthPercent(widthPercent)
+            ? JNI_TRUE
+            : JNI_FALSE;
+    } catch (...) {
+        return JNI_FALSE;
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_rohitkhandel_ggequalizer_audio_NativeDspBridge_nativeSetStereoBalance(
+    JNIEnv*,
+    jobject,
+    jlong handle,
+    jfloat balance) {
+    try {
+        const auto engine = findEngine(handle);
+        return engine && engine->setStereoBalance(balance)
+            ? JNI_TRUE
+            : JNI_FALSE;
+    } catch (...) {
+        return JNI_FALSE;
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_rohitkhandel_ggequalizer_audio_NativeDspBridge_nativeProcess(
     JNIEnv* env,
     jobject,
