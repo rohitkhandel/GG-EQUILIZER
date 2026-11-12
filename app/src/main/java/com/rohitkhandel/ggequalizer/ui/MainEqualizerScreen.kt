@@ -1,18 +1,24 @@
 package com.rohitkhandel.ggequalizer.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +26,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,24 +34,25 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Switch
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -52,8 +60,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -63,18 +76,22 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rohitkhandel.ggequalizer.presets.AutoEqParser
-import com.rohitkhandel.ggequalizer.ui.components.BandSlider
+import com.rohitkhandel.ggequalizer.presets.PresetEntity
 import com.rohitkhandel.ggequalizer.ui.components.FrequencyResponseCanvas
 import com.rohitkhandel.ggequalizer.ui.components.PermissionSetupSheet
 import com.rohitkhandel.ggequalizer.ui.components.RotaryKnob
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.ln
 
-private enum class GgDestination(val title: String, val glyph: String) {
-    EQUALIZER("EQ", "≋"),
+private enum class GgPage(val title: String, val glyph: String) {
+    EQ("EQ", "≋"),
     TONE("TONE", "◉"),
     PRESETS("PRESETS", "▤"),
     SETTINGS("SETTINGS", "⚙")
 }
+
+private data class GraphicBand(val index: Int, val label: String)
 
 @Composable
 fun MainEqualizerScreen(
@@ -86,12 +103,12 @@ fun MainEqualizerScreen(
     val preferences = remember {
         context.getSharedPreferences("gg_equalizer_ui_preferences", Context.MODE_PRIVATE)
     }
-    var destination by rememberSaveable { mutableStateOf(GgDestination.EQUALIZER) }
+    var page by rememberSaveable { mutableStateOf(GgPage.EQ) }
     var accentKey by rememberSaveable {
-        mutableStateOf(preferences.getString("accent_key", "amber") ?: "amber")
+        mutableStateOf(preferences.getString("accent_key", "cyan") ?: "cyan")
     }
-    var showPermissionSheet by remember { mutableStateOf(false) }
-    val accent = if (accentKey == "cyan") CyanAccent else AmberAccent
+    var showAccessHelper by rememberSaveable { mutableStateOf(false) }
+    val accent = if (accentKey == "amber") Amber else Cyan
 
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -105,13 +122,12 @@ fun MainEqualizerScreen(
                 .onFailure { error ->
                     Toast.makeText(
                         context,
-                        error.message ?: "Could not import this preset",
+                        error.message ?: "Preset import failed",
                         Toast.LENGTH_LONG
                     ).show()
                 }
         }
     }
-
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
@@ -133,68 +149,58 @@ fun MainEqualizerScreen(
             }
         }
     }
-
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) viewModel.exportPresetBackup(context, uri)
     }
-
     val restoreLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) viewModel.importPresetBackup(context, uri)
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Background)
-    ) {
-        TopAudiophileBar(
-            activePlayer = state.activePlayerName,
-            packageName = state.activePlayerPackage,
-            sessionCount = state.activeSessionCount,
-            activeSessionId = state.activeSessionId,
-            accent = accent,
-            enabled = state.masterEnabled,
-            onMasterChanged = viewModel::setMasterEnabled
-        )
-
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = Carbon,
+        bottomBar = {
+            CarbonBottomBar(selected = page, accent = accent, onSelect = { page = it })
+        }
+    ) { scaffoldPadding ->
         AnimatedContent(
-            targetState = destination,
+            targetState = page,
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
+                .fillMaxSize()
+                .padding(scaffoldPadding)
+                .background(Carbon),
             transitionSpec = {
-                (fadeIn(animationSpec = tween(190)) + slideInHorizontally(animationSpec = tween(190)) { it / 12 }) togetherWith
-                    (fadeOut(animationSpec = tween(130)) + slideOutHorizontally(animationSpec = tween(130)) { -it / 16 })
+                fadeIn(tween(130)) togetherWith fadeOut(tween(90))
             },
-            label = "GG destination transition"
-        ) { target ->
-            when (target) {
-                GgDestination.EQUALIZER -> EqualizerPage(
+            label = "GG full-screen page"
+        ) { destination ->
+            when (destination) {
+                GgPage.EQ -> EqualizerScreen(
                     state = state,
-                    accent = accent,
                     viewModel = viewModel,
-                    onVisualizerToggle = onVisualizerToggle,
-                    onImport = {
-                        importLauncher.launch(arrayOf("text/plain", "application/json", "application/octet-stream"))
-                    },
-                    onExport = { exportLauncher.launch("GG Equalizer preset.json") }
-                )
-                GgDestination.TONE -> TonePage(
-                    state = state,
                     accent = accent,
-                    viewModel = viewModel
+                    onOpenTone = { page = GgPage.TONE },
+                    onVisualizerToggle = onVisualizerToggle
                 )
-                GgDestination.PRESETS -> PresetsPage(
+                GgPage.TONE -> ToneScreen(
+                    state = state,
+                    viewModel = viewModel,
+                    accent = accent,
+                    onOpenEq = { page = GgPage.EQ }
+                )
+                GgPage.PRESETS -> PresetsScreen(
                     state = state,
                     accent = accent,
                     onApply = viewModel::applyPreset,
                     onSave = { viewModel.saveCurrentPreset("Custom profile") },
                     onImport = {
-                        importLauncher.launch(arrayOf("text/plain", "application/json", "application/octet-stream"))
+                        importLauncher.launch(
+                            arrayOf("text/plain", "application/json", "application/octet-stream")
+                        )
                     },
                     onExport = { exportLauncher.launch("GG Equalizer preset.json") },
                     onBackup = { backupLauncher.launch("GG Equalizer backup.json") },
@@ -202,623 +208,879 @@ fun MainEqualizerScreen(
                         restoreLauncher.launch(arrayOf("application/json", "text/plain"))
                     }
                 )
-                GgDestination.SETTINGS -> SettingsScreen(
+                GgPage.SETTINGS -> SettingsStatusScreen(
                     state = state,
+                    accent = accent,
                     accentKey = accentKey,
-                    onAccentChanged = { value ->
-                        accentKey = value
-                        preferences.edit().putString("accent_key", value).apply()
+                    onAccentChanged = { next ->
+                        accentKey = next
+                        preferences.edit().putString("accent_key", next).apply()
                     },
                     onMasterChanged = viewModel::setMasterEnabled,
-                    onDvcChanged = viewModel::setDvcEnabled,
-                    onVisualizerChanged = onVisualizerToggle,
-                    onVisualizerRefreshRateChanged = viewModel::setVisualizerRefreshRate,
-                    onOpenAccessHelper = { showPermissionSheet = true },
-                    onBackupPresets = { backupLauncher.launch("GG Equalizer backup.json") },
-                    onRestorePresets = {
-                        restoreLauncher.launch(arrayOf("application/json", "text/plain"))
-                    }
+                    onOpenAccessHelper = { showAccessHelper = true },
+                    context = context
                 )
             }
         }
-
-        BottomAudiophileNavigation(
-            selected = destination,
-            accent = accent,
-            onSelect = { destination = it }
-        )
     }
 
-    if (showPermissionSheet) {
-        PermissionSetupSheet(onDismiss = { showPermissionSheet = false })
+    if (showAccessHelper) {
+        PermissionSetupSheet(onDismiss = { showAccessHelper = false })
     }
 }
 
 @Composable
-private fun TopAudiophileBar(
-    activePlayer: String,
-    packageName: String?,
-    sessionCount: Int,
-    activeSessionId: Int?,
+private fun EqualizerScreen(
+    state: EqUiState,
+    viewModel: EqViewModel,
     accent: Color,
-    enabled: Boolean,
-    onMasterChanged: (Boolean) -> Unit
+    onOpenTone: () -> Unit,
+    onVisualizerToggle: (Boolean) -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color(0xFF202020), Color(0xFF151515))
-                )
-            )
-            .padding(start = 18.dp, end = 14.dp, top = 16.dp, bottom = 13.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "GG EQUALIZER",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 2.1.sp
-                )
-                Text(
-                    "AUDIO ENGINE  /  32-BAND DSP",
-                    color = accent,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.8.sp
-                )
-            }
-            Text(
-                if (enabled) "ACTIVE" else "BYPASS",
-                color = if (enabled) accent else MutedText,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Black,
-                modifier = Modifier
-                    .background(accent.copy(alpha = 0.10f), RoundedCornerShape(30.dp))
-                    .padding(horizontal = 9.dp, vertical = 6.dp)
-            )
-            Switch(checked = enabled, onCheckedChange = onMasterChanged)
+    var presetMenu by rememberSaveable { mutableStateOf(false) }
+    var bandMode by rememberSaveable { mutableStateOf("10") }
+    val selectedPreset = state.presets.firstOrNull { it.presetId == state.selectedPresetId }
+    val presetLabel = selectedPreset?.presetName ?: "Bass Extreme"
+    val graphicBands = remember(state.bands, bandMode) {
+        buildGraphicBands(state.bands, bandMode)
+    }
+
+    LaunchedEffect(bandMode) {
+        if (bandMode != "32") {
+            buildGraphicBands(viewModel.uiState.value.bands, bandMode)
+                .forEach { viewModel.setBandQ(it.index, 1.41f) }
         }
+    }
+
+    Column(Modifier.fillMaxSize().background(Carbon)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF121212))
-                .padding(horizontal = 12.dp, vertical = 9.dp),
+                .height(48.dp)
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(Color(0xFF45D483), CircleShape)
-            )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 9.dp)
-            ) {
-                Text(activePlayer, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                Text(
-                    packageName ?: "Waiting for a player audio session",
-                    color = MutedText,
-                    fontSize = 9.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    activeSessionId?.let { "SESSION $it" } ?: "NO SESSION",
-                    color = accent,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    "$sessionCount ATTACHED",
-                    color = MutedText,
-                    fontSize = 8.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun EqualizerPage(
-    state: EqUiState,
-    accent: Color,
-    viewModel: EqViewModel,
-    onVisualizerToggle: (Boolean) -> Unit,
-    onImport: () -> Unit,
-    onExport: () -> Unit
-) {
-    var multiSelect by rememberSaveable { mutableStateOf(false) }
-    var selectedBands by rememberSaveable { mutableStateOf(setOf(state.selectedBandIndex)) }
-    var presetMenuExpanded by rememberSaveable { mutableStateOf(false) }
-    val selectedPresetName = state.presets.firstOrNull { it.presetId == state.selectedPresetId }?.presetName
-        ?: "Current profile"
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("PRESET", color = MutedText, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(9.dp))
-            Box {
-                TextButton(onClick = { presetMenuExpanded = true }) {
-                    Text(selectedPresetName, color = accent, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.weight(1.12f)) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Panel)
+                        .clickable { presetMenu = true }
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        presetLabel,
+                        color = accent,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text("  ▾", color = Muted, fontSize = 10.sp)
                 }
-                DropdownMenu(expanded = presetMenuExpanded, onDismissRequest = { presetMenuExpanded = false }) {
+                DropdownMenu(
+                    expanded = presetMenu,
+                    onDismissRequest = { presetMenu = false }
+                ) {
                     state.presets.forEach { preset ->
                         DropdownMenuItem(
                             text = { Text(preset.presetName) },
                             onClick = {
-                                presetMenuExpanded = false
+                                presetMenu = false
                                 viewModel.applyPreset(preset)
                             }
                         )
                     }
                 }
             }
+
+            Row(
+                modifier = Modifier
+                    .weight(1.05f)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Panel)
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                QuickMode("EQ", true, accent) {}
+                QuickMode("TONE", false, accent, onOpenTone)
+            }
+
+            Row(
+                modifier = Modifier.weight(0.90f).padding(start = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End
+            ) {
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .background(
+                            if (state.activePlayerName != "No player detected") Green else Muted,
+                            CircleShape
+                        )
+                )
+                Text(
+                    if (state.activePlayerName == "No player detected") "No player" else state.activePlayerName,
+                    color = if (state.activePlayerName == "No player detected") Muted else Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 5.dp)
+                )
+            }
         }
 
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .weight(0.27f)
+                .padding(horizontal = 5.dp, vertical = 2.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("EQUALIZER CURVE", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp)
-                Text("32 parametric bands · overlapping response", color = MutedText, fontSize = 9.sp)
-            }
-            Text("FFT", color = MutedText, fontSize = 9.sp)
-            Switch(checked = state.visualizerEnabled, onCheckedChange = onVisualizerToggle)
-        }
-
-        Card(
-            modifier = Modifier.padding(horizontal = 14.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Surface)
-        ) {
-            Column(
-                modifier = Modifier.padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            FrequencyResponseCanvas(
+                points = state.responsePoints,
+                bands = state.bands,
+                selectedBandIndex = state.selectedBandIndex,
+                onBandSelected = viewModel::selectBand,
+                onBandGainChanged = viewModel::setBandGain,
+                spectrumBars = if (state.visualizerEnabled) state.spectrumBars else emptyList(),
+                accent = accent,
+                modifier = Modifier.fillMaxSize()
+            )
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xD90B0D10))
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                FrequencyResponseCanvas(
-                    points = state.responsePoints,
-                    bands = state.bands,
-                    selectedBandIndex = state.selectedBandIndex,
-                    onBandSelected = { index ->
-                        viewModel.selectBand(index)
-                        selectedBands = if (multiSelect) {
-                            if (index in selectedBands) selectedBands - index else selectedBands + index
-                        } else {
-                            setOf(index)
-                        }
-                    },
-                    onBandGainChanged = viewModel::setBandGain,
-                    spectrumBars = if (state.visualizerEnabled) state.spectrumBars else emptyList(),
-                    accent = accent,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    listOf("20", "100", "1k", "10k", "20k").forEach {
-                        Text(it, color = MutedText, fontSize = 8.sp, fontFamily = FontFamily.Monospace)
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                listOf("10", "15", "32").forEach { mode ->
                     Text(
-                        "SMOOTH BAND OVERLAP",
-                        color = accent,
+                        mode,
+                        color = if (bandMode == mode) accent else Muted,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { bandMode = mode }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
-                    Text("MULTI", color = MutedText, fontSize = 9.sp)
-                    Switch(checked = multiSelect, onCheckedChange = { multiSelect = it })
                 }
                 Text(
-                    "Drag the response curve to adjust gain. Tap a point to select a band.",
-                    color = MutedText,
-                    fontSize = 9.sp
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier.padding(horizontal = 17.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("32-BAND EDITOR", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
-            Text(
-                "B${state.selectedBandIndex + 1}  /  ${formatHz(state.bands.getOrNull(state.selectedBandIndex)?.frequencyHz ?: 1000f)}",
-                color = accent,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            itemsIndexed(
-                items = state.bands,
-                key = { index, band -> "band_${index}_${band.frequencyHz}" }
-            ) { index, band ->
-                val selected = index == state.selectedBandIndex || index in selectedBands
-                Column(
+                    "FFT",
+                    color = if (state.visualizerEnabled) accent else Muted,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier
-                        .width(64.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (selected) Color(0xFF2B261D) else Surface)
-                        .padding(vertical = 7.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Text(
-                        String.format(Locale.US, "%+.1f", band.gainDb),
-                        color = if (selected) accent else Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Box(
-                        modifier = Modifier.size(width = 64.dp, height = 210.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        BandSlider(
-                            value = band.gainDb,
-                            valueRange = -12f..12f,
-                            selected = selected,
-                            accent = accent,
-                            modifier = Modifier.fillMaxSize(),
-                            onValueChange = { gain ->
-                                viewModel.selectBand(index)
-                                if (multiSelect && selectedBands.isNotEmpty()) {
-                                    val delta = gain - band.gainDb
-                                    selectedBands.forEach { target ->
-                                        val start = state.bands.getOrNull(target)?.gainDb ?: 0f
-                                        val next = if (target == index) gain else start + delta
-                                        viewModel.setBandGain(target, next.coerceIn(-12f, 12f))
-                                    }
-                                } else {
-                                    viewModel.setBandGain(index, gain)
-                                }
-                            }
-                        )
-                    }
-                    Text(formatHz(band.frequencyHz), color = MutedText, fontSize = 7.sp, fontFamily = FontFamily.Monospace)
-                    Text("B${index + 1}", color = if (selected) accent else MutedText, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                }
+                        .clickable { onVisualizerToggle(!state.visualizerEnabled) }
+                        .padding(horizontal = 7.dp, vertical = 4.dp)
+                )
             }
         }
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .weight(0.73f)
+                .padding(top = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(onClick = onImport, modifier = Modifier.weight(1f)) { Text("AUTOEQ IMPORT", fontSize = 9.sp) }
-            Button(onClick = onExport, modifier = Modifier.weight(1f)) { Text("EXPORT JSON", fontSize = 9.sp) }
+            PowerampFader(
+                value = state.preampGainDb,
+                valueRange = -24f..12f,
+                label = "PRE",
+                accent = accent,
+                selected = false,
+                modifier = Modifier.width(60.dp).fillMaxHeight(),
+                onValueChange = viewModel::setPreampGain
+            )
+            Spacer(
+                Modifier
+                    .fillMaxHeight()
+                    .width(1.dp)
+                    .padding(vertical = 12.dp)
+                    .background(Color(0xFF303944))
+            )
+            LazyRow(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                contentPadding = PaddingValues(horizontal = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items(
+                    items = graphicBands,
+                    key = { "graphic_${bandMode}_${it.index}" }
+                ) { item ->
+                    val band = state.bands[item.index]
+                    PowerampFader(
+                        value = band.gainDb,
+                        valueRange = -12f..12f,
+                        label = item.label,
+                        accent = accent,
+                        selected = item.index == state.selectedBandIndex,
+                        modifier = Modifier.width(if (bandMode == "32") 50.dp else 56.dp).fillMaxHeight(),
+                        onValueChange = { gain ->
+                            viewModel.selectBand(item.index)
+                            viewModel.setBandGain(item.index, gain)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickMode(
+    text: String,
+    selected: Boolean,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Text(
+        text,
+        color = if (selected) Color(0xFF081116) else Muted,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Black,
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (selected) accent else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    )
+}
+
+@Composable
+private fun PowerampFader(
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    label: String,
+    accent: Color,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onValueChange: (Float) -> Unit
+) {
+    val latestCallback = androidx.compose.runtime.rememberUpdatedState(onValueChange)
+    val localValue = remember { mutableFloatStateOf(value) }
+    val dragging = remember { mutableStateOf(false) }
+    val range = (valueRange.endInclusive - valueRange.start).coerceAtLeast(0.001f)
+
+    LaunchedEffect(value) {
+        if (!dragging.value) localValue.floatValue = value
+    }
+
+    Column(
+        modifier = modifier.padding(horizontal = 1.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            String.format(Locale.US, "%+.1f", localValue.floatValue),
+            color = if (selected) accent else Color(0xFFD6DEE8),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1
+        )
+        Canvas(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .pointerInput(valueRange.start, valueRange.endInclusive) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        dragging.value = true
+                        var lastDispatch = 0L
+                        fun update(y: Float) {
+                            val fraction = (1f - y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f)
+                            val next = (valueRange.start + fraction * range)
+                                .coerceIn(valueRange.start, valueRange.endInclusive)
+                            localValue.floatValue = next
+                            val now = android.os.SystemClock.uptimeMillis()
+                            if (lastDispatch == 0L || now - lastDispatch >= 20L) {
+                                latestCallback.value(next)
+                                lastDispatch = now
+                            }
+                        }
+                        try {
+                            update(down.position.y)
+                            var pressed = true
+                            while (pressed) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (change.pressed) update(change.position.y)
+                                change.consume()
+                                pressed = change.pressed
+                            }
+                        } finally {
+                            latestCallback.value(localValue.floatValue)
+                            dragging.value = false
+                        }
+                    }
+                }
+        ) {
+            val top = 8.dp.toPx()
+            val bottom = size.height - 8.dp.toPx()
+            val usable = (bottom - top).coerceAtLeast(1f)
+            val fraction = ((localValue.floatValue - valueRange.start) / range).coerceIn(0f, 1f)
+            val zeroFraction = ((0f - valueRange.start) / range).coerceIn(0f, 1f)
+            val yValue = bottom - fraction * usable
+            val yZero = bottom - zeroFraction * usable
+            val centerX = size.width / 2f
+            val trackWidth = 5.dp.toPx()
+            val capWidth = (size.width * 0.78f).coerceAtLeast(30.dp.toPx())
+            val capHeight = 15.dp.toPx()
+
+            drawRoundRect(
+                Color(0xFF242C35),
+                Offset(centerX - trackWidth / 2f, top),
+                Size(trackWidth, usable),
+                CornerRadius(trackWidth)
+            )
+            drawRoundRect(
+                accent.copy(alpha = 0.72f),
+                Offset(centerX - trackWidth / 2f, minOf(yValue, yZero)),
+                Size(trackWidth, abs(yZero - yValue).coerceAtLeast(1f)),
+                CornerRadius(trackWidth)
+            )
+            drawLine(
+                Color(0xFF718092),
+                Offset(centerX - 10.dp.toPx(), yZero),
+                Offset(centerX + 10.dp.toPx(), yZero),
+                1.dp.toPx()
+            )
+            for (tick in 0..8) {
+                val y = top + usable * tick / 8f
+                drawLine(
+                    Color(0xFF536171),
+                    Offset(centerX + 7.dp.toPx(), y),
+                    Offset(centerX + 11.dp.toPx(), y),
+                    1.dp.toPx()
+                )
+            }
+            val capTop = yValue - capHeight / 2f
+            drawRoundRect(
+                accent.copy(alpha = if (selected) 0.25f else 0.14f),
+                Offset(centerX - capWidth / 2f - 3.dp.toPx(), capTop - 3.dp.toPx()),
+                Size(capWidth + 6.dp.toPx(), capHeight + 6.dp.toPx()),
+                CornerRadius(5.dp.toPx())
+            )
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    listOf(Color(0xFFF0F3F6), Color(0xFF8995A2), Color(0xFF3C4652))
+                ),
+                topLeft = Offset(centerX - capWidth / 2f, capTop),
+                size = Size(capWidth, capHeight),
+                cornerRadius = CornerRadius(4.dp.toPx())
+            )
+            drawRoundRect(
+                Color(0xFF202832),
+                Offset(centerX - capWidth / 2f, capTop),
+                Size(capWidth, capHeight),
+                CornerRadius(4.dp.toPx()),
+                style = Stroke(width = 0.8.dp.toPx())
+            )
+            drawLine(
+                accent.copy(alpha = 0.38f),
+                Offset(centerX - capWidth * 0.34f, yValue),
+                Offset(centerX + capWidth * 0.34f, yValue),
+                5.dp.toPx()
+            )
+            drawLine(
+                accent,
+                Offset(centerX - capWidth * 0.30f, yValue),
+                Offset(centerX + capWidth * 0.30f, yValue),
+                1.5.dp.toPx()
+            )
         }
         Text(
-            state.attachmentSummary,
-            modifier = Modifier.padding(horizontal = 17.dp),
-            color = MutedText,
-            fontSize = 9.sp
+            label,
+            color = if (selected) accent else Color(0xFF9AA8B8),
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1
         )
     }
 }
 
 @Composable
-private fun TonePage(
+private fun ToneScreen(
     state: EqUiState,
+    viewModel: EqViewModel,
     accent: Color,
-    viewModel: EqViewModel
+    onOpenEq: () -> Unit
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        modifier = Modifier.fillMaxSize().background(Carbon),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("TONE & VOLUME", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
-        Text("Independent bass, treble and preamp controls", color = MutedText, fontSize = 10.sp)
-
-        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Surface)) {
-            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("TONE SHAPING", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.3.sp)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        RotaryKnob(
-                            "Bass", state.bassGainDb, -12f..12f, 0f,
-                            String.format(Locale.US, "%+.1f dB", state.bassGainDb),
-                            viewModel::setBassGain, accent = accent
-                        )
-                    }
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        RotaryKnob(
-                            "Treble", state.trebleGainDb, -12f..12f, 0f,
-                            String.format(Locale.US, "%+.1f dB", state.trebleGainDb),
-                            viewModel::setTrebleGain, accent = accent
-                        )
-                    }
-                }
-                androidx.compose.material3.HorizontalDivider(color = Color(0xFF343434))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("PREAMP", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(String.format(Locale.US, "%+.1f dB", state.preampGainDb), color = accent, fontSize = 11.sp)
-                    }
-                    Text("−24 to +12 dB", color = MutedText, fontSize = 9.sp)
-                }
-                Slider(
-                    value = state.preampGainDb,
-                    onValueChange = viewModel::setPreampGain,
-                    valueRange = -24f..12f,
-                    colors = SliderDefaults.colors(
-                        thumbColor = accent,
-                        activeTrackColor = accent,
-                        inactiveTrackColor = Color(0xFF444444)
-                    )
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("TONE", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+            QuickMode("EQ", false, accent, onOpenEq)
+            QuickMode("TONE", true, accent) {}
         }
 
-        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Surface)) {
-            Column(modifier = Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("VOLUME & PROTECTION", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp)
-                SettingInlineSwitch("Dynamic volume compensation", state.dvcEnabled, viewModel::setDvcEnabled)
-                androidx.compose.material3.HorizontalDivider(color = Color(0xFF343434))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("AVOID OVERLOADING / LIMITER", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text("Preamp headroom + 10:1 session limiter", color = MutedText, fontSize = 9.sp)
-                    }
-                    Switch(checked = state.limiterEnabled, onCheckedChange = viewModel::setLimiterEnabled)
-                }
-                Text(
-                    if (state.limiterEnabled) {
-                        "Protection enabled · estimated headroom follows the combined EQ and tone curve."
-                    } else {
-                        "Protection bypassed · large boosts can exceed digital full scale."
-                    },
-                    color = if (state.limiterEnabled) accent else Color(0xFFFF8A75),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    if (state.dvcSnapshot.clippingProtectionActive) {
-                        "DVC reserve ${String.format(Locale.US, "%.1f dB", state.dvcSnapshot.preampCompensationDb)}"
-                    } else {
-                        "DVC follows the Android music-stream volume setting."
-                    },
-                    color = MutedText,
-                    fontSize = 9.sp
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RotaryKnob(
+                label = "BASS",
+                value = (state.bassGainDb.coerceIn(0f, 12f) / 12f),
+                valueRange = 0f..1f,
+                defaultValue = 0f,
+                valueText = "${(state.bassGainDb.coerceIn(0f, 12f) / 12f * 100f).toInt()}%",
+                onValueChange = { viewModel.setBassGain(it * 12f) },
+                modifier = Modifier.weight(1f),
+                accent = accent,
+                knobSize = 150.dp
+            )
+            RotaryKnob(
+                label = "TREBLE",
+                value = (state.trebleGainDb.coerceIn(0f, 12f) / 12f),
+                valueRange = 0f..1f,
+                defaultValue = 0f,
+                valueText = "${(state.trebleGainDb.coerceIn(0f, 12f) / 12f * 100f).toInt()}%",
+                onValueChange = { viewModel.setTrebleGain(it * 12f) },
+                modifier = Modifier.weight(1f),
+                accent = accent,
+                knobSize = 150.dp
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().height(126.dp).padding(horizontal = 10.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RotaryKnob(
+                label = "STEREO EXPAND",
+                value = state.stereoWidthPercent,
+                valueRange = 0f..200f,
+                defaultValue = 100f,
+                valueText = "${state.stereoWidthPercent.toInt()}%",
+                onValueChange = viewModel::setStereoWidthPercent,
+                modifier = Modifier.weight(1f),
+                accent = accent,
+                knobSize = 82.dp
+            )
+            RotaryKnob(
+                label = "PREAMP",
+                value = state.preampGainDb,
+                valueRange = -24f..12f,
+                defaultValue = 0f,
+                valueText = String.format(Locale.US, "%+.1f dB", state.preampGainDb),
+                onValueChange = viewModel::setPreampGain,
+                modifier = Modifier.weight(1f),
+                accent = accent,
+                knobSize = 82.dp
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PowerampPillSwitch(
+                "LIMITER",
+                state.limiterEnabled,
+                accent,
+                Modifier.weight(1f),
+                viewModel::setLimiterEnabled
+            )
+            PowerampPillSwitch(
+                "DVC",
+                state.dvcEnabled,
+                accent,
+                Modifier.weight(1f),
+                viewModel::setDvcEnabled
+            )
         }
     }
 }
 
 @Composable
-private fun SettingInlineSwitch(title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = Color.White, fontSize = 11.sp, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+private fun PowerampPillSwitch(
+    label: String,
+    checked: Boolean,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    onChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = modifier
+            .height(38.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(if (checked) accent.copy(alpha = 0.16f) else Panel)
+            .clickable { onChange(!checked) }
+            .padding(horizontal = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, color = if (checked) accent else Muted, fontSize = 10.sp, fontWeight = FontWeight.Black)
+        Box(
+            Modifier
+                .size(width = 28.dp, height = 15.dp)
+                .clip(CircleShape)
+                .background(if (checked) accent else Color(0xFF48515D))
+                .padding(2.dp),
+            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+        ) {
+            Box(Modifier.size(11.dp).background(Color.White, CircleShape))
+        }
     }
 }
 
 @Composable
-private fun PresetsPage(
+private fun PresetsScreen(
     state: EqUiState,
     accent: Color,
-    onApply: (com.rohitkhandel.ggequalizer.presets.PresetEntity) -> Unit,
+    onApply: (PresetEntity) -> Unit,
     onSave: () -> Unit,
     onImport: () -> Unit,
     onExport: () -> Unit,
     onBackup: () -> Unit,
     onRestore: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("PRESET LIBRARY", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
-                Text("${state.presets.size} stored profiles", color = MutedText, fontSize = 10.sp)
+    Column(Modifier.fillMaxSize().background(Carbon)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(54.dp).padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("PRESETS", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                Text("${state.presets.size} profiles", color = Muted, fontSize = 9.sp)
             }
-            Button(onClick = onSave) { Text("SAVE CURRENT", fontSize = 9.sp) }
+            TextButton(onClick = onSave) { Text("SAVE CURRENT", color = accent, fontSize = 9.sp) }
         }
-        state.presetMessage?.let { Text(it, color = accent, fontSize = 10.sp) }
-        state.presets.forEach { preset ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (preset.presetId == state.selectedPresetId) Color(0xFF33291B) else Surface
-                ),
-                onClick = { onApply(preset) }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(preset.presetName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text(preset.description, color = MutedText, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
+        state.presetMessage?.let {
+            Text(it, color = accent, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 15.dp, vertical = 2.dp))
+        }
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            items(state.presets, key = { it.presetId }) { preset ->
+                PresetCard(
+                    preset = preset,
+                    selected = preset.presetId == state.selectedPresetId,
+                    accent = accent,
+                    onClick = { onApply(preset) }
+                )
+            }
+            if (state.presets.isEmpty()) {
+                item {
                     Text(
-                        if (preset.isBuiltIn) "BUILT-IN" else "CUSTOM",
-                        color = accent,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Black
+                        "Your saved presets will appear here.",
+                        color = Muted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(16.dp)
                     )
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Button(onClick = onImport, modifier = Modifier.weight(1f)) { Text("IMPORT", fontSize = 9.sp) }
-            Button(onClick = onExport, modifier = Modifier.weight(1f)) { Text("EXPORT", fontSize = 9.sp) }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Button(onClick = onBackup, modifier = Modifier.weight(1f)) { Text("BACKUP ALL", fontSize = 9.sp) }
-            Button(onClick = onRestore, modifier = Modifier.weight(1f)) { Text("RESTORE ALL", fontSize = 9.sp) }
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                PresetAction("IMPORT", accent, Modifier.weight(1f), onImport)
+                PresetAction("EXPORT", accent, Modifier.weight(1f), onExport)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                PresetAction("BACKUP", accent, Modifier.weight(1f), onBackup)
+                PresetAction("RESTORE", accent, Modifier.weight(1f), onRestore)
+            }
         }
     }
 }
 
 @Composable
-private fun BottomAudiophileNavigation(
-    selected: GgDestination,
+private fun PresetCard(
+    preset: PresetEntity,
+    selected: Boolean,
     accent: Color,
-    onSelect: (GgDestination) -> Unit
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) Color(0xFF18252C) else Panel
+        )
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(7.dp).background(if (selected) accent else Color(0xFF4C5866), CircleShape))
+            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                Text(preset.presetName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    preset.description,
+                    color = Muted,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(if (preset.isBuiltIn) "BUILT-IN" else "CUSTOM", color = accent, fontSize = 8.sp, fontWeight = FontWeight.Black)
+        }
+    }
+}
+
+@Composable
+private fun PresetAction(
+    label: String,
+    accent: Color,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .height(38.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(Panel)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = accent, fontSize = 9.sp, fontWeight = FontWeight.Black)
+    }
+}
+
+@Composable
+private fun SettingsStatusScreen(
+    state: EqUiState,
+    accent: Color,
+    accentKey: String,
+    onAccentChanged: (String) -> Unit,
+    onMasterChanged: (Boolean) -> Unit,
+    onOpenAccessHelper: () -> Unit,
+    context: Context
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().background(Carbon),
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("SETTINGS & STATUS", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                Text(
+                    if (state.masterEnabled) "ENGINE ON" else "BYPASS",
+                    color = if (state.masterEnabled) accent else Muted,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        item {
+            SettingsCard(title = "PLAYER / AUDIO SESSION", accent = accent) {
+                StatusLine("Player", state.activePlayerName)
+                StatusLine("Package", state.activePlayerPackage ?: "—")
+                StatusLine("Session ID", state.activeSessionId?.toString() ?: "Not attached")
+                StatusLine("Attached effects", state.activeSessionCount.toString())
+                StatusLine("Engine", if (state.masterEnabled) "Enabled" else "Bypass")
+                StatusLine("Effect path", state.attachmentSummary)
+                Text("Master processing", color = Color.White, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
+                PowerampPillSwitch(
+                    "MASTER DSP",
+                    state.masterEnabled,
+                    accent,
+                    Modifier.fillMaxWidth(),
+                    onMasterChanged
+                )
+            }
+        }
+        item {
+            SettingsCard(title = "ACCESS & PERMISSIONS", accent = accent) {
+                SettingsAction("Notification listener access") {
+                    openSettingsPage(context, Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                }
+                SettingsAction("Usage access") {
+                    openSettingsPage(context, Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                }
+                SettingsAction("App permissions") {
+                    openSettingsPage(context, Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                }
+                SettingsAction("Battery optimisation") {
+                    openSettingsPage(context, Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))
+                }
+                SettingsAction("Guided access setup") { onOpenAccessHelper() }
+            }
+        }
+        item {
+            SettingsCard(title = "DEVELOPER / ADB", accent = accent) {
+                val commands = "adb shell dumpsys media_session\nadb shell dumpsys media.audio_flinger"
+                Text("Inspect active players and audio sessions from a connected computer.", color = Muted, fontSize = 9.sp)
+                Text(commands, color = Color(0xFFB9C9D8), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                TextButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("GG Equalizer ADB", commands))
+                        Toast.makeText(context, "ADB commands copied", Toast.LENGTH_SHORT).show()
+                    }
+                ) { Text("COPY ADB COMMANDS", color = accent, fontSize = 9.sp) }
+            }
+        }
+        item {
+            SettingsCard(title = "APPEARANCE", accent = accent) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SettingsAction("CYAN") { onAccentChanged("cyan") }
+                    SettingsAction("AMBER") { onAccentChanged("amber") }
+                }
+                StatusLine("Accent", accentKey.uppercase(Locale.US))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsCard(
+    title: String,
+    accent: Color,
+    content: @Composable () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(13.dp),
+        colors = CardDefaults.cardColors(containerColor = Panel)
+    ) {
+        Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(title, color = accent, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun StatusLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Text(label, color = Muted, fontSize = 9.sp, modifier = Modifier.weight(0.8f))
+        Text(
+            value,
+            color = Color(0xFFDCE4EC),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1.2f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun SettingsAction(label: String, onClick: () -> Unit) {
+    Text(
+        label,
+        color = Color(0xFFE7EDF4),
+        fontSize = 10.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF202A34))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 11.dp, vertical = 10.dp)
+    )
+}
+
+private fun openSettingsPage(context: Context, action: String, uri: Uri? = null) {
+    runCatching {
+        val intent = Intent(action).apply {
+            if (uri != null) data = uri
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }.onFailure {
+        Toast.makeText(context, "This settings page is unavailable on this device", Toast.LENGTH_SHORT).show()
+    }
+}
+
+@Composable
+private fun CarbonBottomBar(
+    selected: GgPage,
+    accent: Color,
+    onSelect: (GgPage) -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .background(Color(0xFF1B1B1B))
-            .padding(horizontal = 8.dp, vertical = 7.dp),
+            .height(58.dp)
+            .background(Color(0xFF090B0E))
+            .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        GgDestination.entries.forEach { item ->
-            val active = item == selected
+        GgPage.entries.forEach { item ->
+            val active = selected == item
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (active) accent.copy(alpha = 0.12f) else Color.Transparent)
-                    .padding(vertical = 5.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(if (active) accent.copy(alpha = 0.11f) else Color.Transparent)
+                    .clickable { onSelect(item) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                TextButton(onClick = { onSelect(item) }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        GgNavigationIcon(item, if (active) accent else MutedText)
-                        Text(item.title, color = if (active) accent else MutedText, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp)
-                    }
-                }
+                Text(item.glyph, color = if (active) accent else Muted, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(item.title, color = if (active) accent else Muted, fontSize = 7.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
             }
         }
     }
 }
 
-@Composable
-private fun GgNavigationIcon(destination: GgDestination, tint: Color) {
-    Canvas(Modifier.size(22.dp)) {
-        val stroke = 1.8.dp.toPx()
-        val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
-        val radius = size.minDimension * 0.34f
-        when (destination) {
-            GgDestination.EQUALIZER -> {
-                val xs = listOf(0.22f, 0.50f, 0.78f).map { size.width * it }
-                val knobYs = listOf(0.34f, 0.67f, 0.44f).map { size.height * it }
-                xs.forEachIndexed { index, x ->
-                    drawLine(
-                        tint.copy(alpha = 0.48f),
-                        androidx.compose.ui.geometry.Offset(x, size.height * 0.12f),
-                        androidx.compose.ui.geometry.Offset(x, size.height * 0.88f),
-                        strokeWidth = stroke
-                    )
-                    drawRoundRect(
-                        tint,
-                        topLeft = androidx.compose.ui.geometry.Offset(x - 2.5.dp.toPx(), knobYs[index] - 2.dp.toPx()),
-                        size = androidx.compose.ui.geometry.Size(5.dp.toPx(), 4.dp.toPx()),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx())
-                    )
-                }
-            }
-            GgDestination.TONE -> {
-                drawCircle(tint.copy(alpha = 0.28f), radius + 3.dp.toPx(), center, style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
-                drawCircle(tint, radius * 0.78f, center, style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
-                drawLine(
-                    tint, center,
-                    androidx.compose.ui.geometry.Offset(center.x + radius * 0.52f, center.y - radius * 0.62f),
-                    strokeWidth = stroke,
-                    cap = androidx.compose.ui.graphics.StrokeCap.Round
-                )
-                drawCircle(tint, 2.dp.toPx(), center)
-            }
-            GgDestination.PRESETS -> {
-                val left = size.width * 0.22f
-                val top = size.height * 0.12f
-                val width = size.width * 0.56f
-                val height = size.height * 0.76f
-                drawRoundRect(
-                    tint,
-                    topLeft = androidx.compose.ui.geometry.Offset(left, top),
-                    size = androidx.compose.ui.geometry.Size(width, height),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke)
-                )
-                for (line in 0..2) {
-                    val y = top + height * (0.30f + line * 0.23f)
-                    drawLine(
-                        tint,
-                        androidx.compose.ui.geometry.Offset(left + 4.dp.toPx(), y),
-                        androidx.compose.ui.geometry.Offset(left + width - 4.dp.toPx(), y),
-                        strokeWidth = stroke,
-                        cap = androidx.compose.ui.graphics.StrokeCap.Round
-                    )
-                }
-            }
-            GgDestination.SETTINGS -> {
-                for (tooth in 0 until 8) {
-                    val angle = tooth * (Math.PI / 4.0)
-                    val inner = radius * 0.78f
-                    val outer = radius + 4.dp.toPx()
-                    drawLine(
-                        tint,
-                        androidx.compose.ui.geometry.Offset(center.x + kotlin.math.cos(angle).toFloat() * inner, center.y + kotlin.math.sin(angle).toFloat() * inner),
-                        androidx.compose.ui.geometry.Offset(center.x + kotlin.math.cos(angle).toFloat() * outer, center.y + kotlin.math.sin(angle).toFloat() * outer),
-                        strokeWidth = stroke + 0.4.dp.toPx(),
-                        cap = androidx.compose.ui.graphics.StrokeCap.Round
-                    )
-                }
-                drawCircle(tint, radius, center, style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
-                drawCircle(tint, 2.2.dp.toPx(), center)
-            }
-        }
+private fun buildGraphicBands(bands: List<EqBandUiState>, mode: String): List<GraphicBand> {
+    if (bands.isEmpty()) return emptyList()
+    if (mode == "32") {
+        return bands.mapIndexed { index, band -> GraphicBand(index, compactFrequency(band.frequencyHz)) }
+    }
+    val targets = if (mode == "15") {
+        listOf(
+            25f to "25", 40f to "40", 63f to "63", 100f to "100", 160f to "160",
+            250f to "250", 400f to "400", 630f to "630", 1_000f to "1k",
+            1_600f to "1.6k", 2_500f to "2.5k", 4_000f to "4k",
+            6_300f to "6.3k", 10_000f to "10k", 16_000f to "16k"
+        )
+    } else {
+        listOf(
+            31f to "31", 62f to "62", 125f to "125", 250f to "250", 500f to "500",
+            1_000f to "1k", 2_000f to "2k", 4_000f to "4k", 8_000f to "8k", 16_000f to "16k"
+        )
+    }
+    return targets.map { (frequency, label) ->
+        val index = bands.indices.minByOrNull { candidate ->
+            abs(ln(bands[candidate].frequencyHz.coerceAtLeast(1f) / frequency))
+        } ?: 0
+        GraphicBand(index, label)
+    }.distinctBy(GraphicBand::index)
+}
+
+private fun compactFrequency(frequencyHz: Float): String {
+    if (frequencyHz < 1000f) return String.format(Locale.US, "%.0f", frequencyHz)
+    val khz = frequencyHz / 1000f
+    return if (abs(khz - khz.toInt()) < 0.05f) {
+        String.format(Locale.US, "%.0fk", khz)
+    } else {
+        String.format(Locale.US, "%.1fk", khz)
     }
 }
 
-private fun formatHz(value: Float): String =
-    if (value >= 1000f) String.format(Locale.US, "%.1fk", value / 1000f)
-    else String.format(Locale.US, "%.0f", value)
-
-
-private val Background = Color(0xFF121212)
-private val Surface = Color(0xFF1E1E1E)
-private val MutedText = Color(0xFF999999)
-private val AmberAccent = Color(0xFFFFB547)
-private val CyanAccent = Color(0xFF42D9F5)
+private val Carbon = Color(0xFF0B0D10)
+private val Panel = Color(0xFF171C22)
+private val Muted = Color(0xFF82909E)
+private val Cyan = Color(0xFF42D9F5)
+private val Amber = Color(0xFFFFB547)
+private val Green = Color(0xFF39D98A)
