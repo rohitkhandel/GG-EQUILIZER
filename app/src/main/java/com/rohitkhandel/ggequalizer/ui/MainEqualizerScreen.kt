@@ -28,6 +28,13 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+import com.rohitkhandel.ggequalizer.presets.AutoEqParser
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material3.Text
@@ -58,10 +65,58 @@ private val MainText = Color(0xFFEAF3FA)
 
 @Composable
 fun MainEqualizerScreen(
-    viewModel: EqViewModel = viewModel()
+    viewModel: EqViewModel = viewModel(),
+    onVisualizerToggle: (Boolean) -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var showPermissionSheet by remember { mutableStateOf(false) }
+    var presetMenuExpanded by remember { mutableStateOf(false) }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching { AutoEqParser.parseUri(context, uri) }
+                .onSuccess { imported ->
+                    viewModel.applyImportedProfile(imported.name, imported.profile)
+                    Toast.makeText(context, "Imported ${imported.name}", Toast.LENGTH_SHORT).show()
+                }
+                .onFailure { error ->
+                    Toast.makeText(
+                        context,
+                        error.message ?: "Could not import this preset",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+        }
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                AutoEqParser.exportPowerampJson(
+                    context = context,
+                    uri = uri,
+                    presetName = "GG Equalizer",
+                    profile = viewModel.currentAudioProfile(),
+                    stereoWidthPercent = state.stereoWidthPercent,
+                    stereoBalance = state.stereoBalance,
+                    dvcEnabled = state.dvcEnabled
+                )
+            }.onSuccess {
+                Toast.makeText(context, "Preset exported", Toast.LENGTH_SHORT).show()
+            }.onFailure { error ->
+                Toast.makeText(
+                    context,
+                    error.message ?: "Could not export preset",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -83,6 +138,61 @@ fun MainEqualizerScreen(
 
         if (showPermissionSheet) {
             PermissionSetupSheet(onDismiss = { showPermissionSheet = false })
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box {
+                TextButton(onClick = { presetMenuExpanded = true }) {
+                    Text(
+                        text = "PRESET  ·  " + (
+                            state.presets.firstOrNull { it.presetId == state.selectedPresetId }?.presetName
+                                ?: "SELECT"
+                            ),
+                        color = Accent,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+                DropdownMenu(
+                    expanded = presetMenuExpanded,
+                    onDismissRequest = { presetMenuExpanded = false }
+                ) {
+                    state.presets.forEach { preset ->
+                        DropdownMenuItem(
+                            text = { Text(preset.presetName) },
+                            onClick = {
+                                presetMenuExpanded = false
+                                viewModel.applyPreset(preset)
+                            }
+                        )
+                    }
+                }
+            }
+            TextButton(onClick = {
+                importLauncher.launch(arrayOf("text/plain", "application/json", "application/octet-stream"))
+            }) {
+                Text("AUTOEQ IMPORT", color = MainText, fontSize = 9.sp)
+            }
+            TextButton(onClick = {
+                exportLauncher.launch("GG Equalizer preset.json")
+            }) {
+                Text("EXPORT", color = MainText, fontSize = 9.sp)
+            }
+            TextButton(onClick = {
+                viewModel.saveCurrentPreset("Custom profile")
+                Toast.makeText(context, "Preset saved", Toast.LENGTH_SHORT).show()
+            }) {
+                Text("SAVE", color = MainText, fontSize = 9.sp)
+            }
+        }
+
+        state.presetMessage?.let { message ->
+            Text(message, color = MutedText, fontSize = 9.sp)
         }
 
         HeaderPanel(
@@ -116,18 +226,26 @@ fun MainEqualizerScreen(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.1.sp
                     )
-                    Text(
-                        text = "20 Hz — 20 kHz",
-                        color = MutedText,
-                        fontSize = 10.sp
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("FFT", color = MutedText, fontSize = 9.sp)
+                        Switch(
+                            checked = state.visualizerEnabled,
+                            onCheckedChange = onVisualizerToggle,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF06212A),
+                                checkedTrackColor = Accent
+                            )
+                        )
+                        Text("20 Hz — 20 kHz", color = MutedText, fontSize = 9.sp)
+                    }
                 }
 
                 FrequencyResponseCanvas(
                     points = state.responsePoints,
                     bands = state.bands,
                     selectedBandIndex = state.selectedBandIndex,
-                    onBandSelected = viewModel::selectBand
+                    onBandSelected = viewModel::selectBand,
+                    spectrumBars = if (state.visualizerEnabled) state.spectrumBars else emptyList()
                 )
 
                 Row(
@@ -157,7 +275,11 @@ fun MainEqualizerScreen(
             onPreampChanged = viewModel::setPreampGain,
             onLimiterThresholdChanged = viewModel::setLimiterThreshold,
             onLimiterReleaseChanged = viewModel::setLimiterRelease,
-            onLimiterEnabled = viewModel::setLimiterEnabled
+            onLimiterEnabled = viewModel::setLimiterEnabled,
+            stereoWidthPercent = state.stereoWidthPercent,
+            stereoBalance = state.stereoBalance,
+            onStereoWidthChanged = viewModel::setStereoWidthPercent,
+            onStereoBalanceChanged = viewModel::setStereoBalance
         )
 
         Text(
@@ -458,7 +580,11 @@ private fun ToneAndDynamicsPanel(
     onPreampChanged: (Float) -> Unit,
     onLimiterThresholdChanged: (Float) -> Unit,
     onLimiterReleaseChanged: (Float) -> Unit,
-    onLimiterEnabled: (Boolean) -> Unit
+    onLimiterEnabled: (Boolean) -> Unit,
+    stereoWidthPercent: Float,
+    stereoBalance: Float,
+    onStereoWidthChanged: (Float) -> Unit,
+    onStereoBalanceChanged: (Float) -> Unit
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = PanelBackground),
@@ -541,6 +667,24 @@ private fun ToneAndDynamicsPanel(
                     valueText = String.format(Locale.US, "%.0f ms", state.limiterReleaseMs),
                     onValueChange = onLimiterReleaseChanged,
                     accent = Color(0xFFFFB454)
+                )
+                RotaryKnob(
+                    label = "Width",
+                    value = stereoWidthPercent,
+                    valueRange = 0f..200f,
+                    defaultValue = 100f,
+                    valueText = String.format(Locale.US, "%.0f%%", stereoWidthPercent),
+                    onValueChange = onStereoWidthChanged,
+                    accent = Color(0xFF8E9CFF)
+                )
+                RotaryKnob(
+                    label = "Balance",
+                    value = stereoBalance,
+                    valueRange = -1f..1f,
+                    defaultValue = 0f,
+                    valueText = String.format(Locale.US, "%+.2f", stereoBalance),
+                    onValueChange = onStereoBalanceChanged,
+                    accent = Color(0xFF8E9CFF)
                 )
             }
 

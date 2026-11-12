@@ -30,6 +30,7 @@ fun FrequencyResponseCanvas(
     bands: List<EqBandUiState>,
     selectedBandIndex: Int,
     onBandSelected: (Int) -> Unit,
+    spectrumBars: List<Float> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -38,6 +39,14 @@ fun FrequencyResponseCanvas(
             .height(190.dp)
             .background(Color(0xFF10151D), RoundedCornerShape(18.dp))
     ) {
+        if (spectrumBars.isNotEmpty()) {
+            SpectrumVisualizerCanvas(
+                bars = spectrumBars,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(190.dp)
+            )
+        }
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
