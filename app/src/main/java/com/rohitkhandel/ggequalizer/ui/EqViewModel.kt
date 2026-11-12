@@ -1,6 +1,9 @@
 package com.rohitkhandel.ggequalizer.ui
 
 import android.app.Application
+import android.content.Context
+import android.net.Uri
+import java.io.IOException
 import android.content.pm.PackageManager
 import androidx.lifecycle.AndroidViewModel
 import com.rohitkhandel.ggequalizer.audio.DvcManager
@@ -13,6 +16,7 @@ import com.rohitkhandel.ggequalizer.audio.NativeDspBridge
 import com.rohitkhandel.ggequalizer.audio.FftAnalyzer
 import com.rohitkhandel.ggequalizer.presets.EqDatabase
 import com.rohitkhandel.ggequalizer.presets.PresetEntity
+import com.rohitkhandel.ggequalizer.presets.PresetBackup
 import kotlinx.coroutines.flow.collect
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
@@ -303,6 +307,53 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         scope.launch {
             presetDao.upsert(preset)
             mutableState.update { it.copy(selectedPresetId = preset.presetId, presetMessage = "Saved ${preset.presetName}") }
+        }
+    }
+
+    fun exportPresetBackup(context: Context, uri: Uri) {
+        scope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                val allPresets = mutableState.value.presets
+                require(allPresets.isNotEmpty()) { "There are no presets to back up yet." }
+                val json = PresetBackup.encode(allPresets)
+                context.contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use {
+                    it.write(json)
+                } ?: throw IOException("Android could not open the backup destination.")
+                allPresets.size
+            }
+            withContext(Dispatchers.Main.immediate) {
+                mutableState.update { current ->
+                    current.copy(
+                        presetMessage = result.fold(
+                            onSuccess = { "Backed up $it presets" },
+                            onFailure = { error -> error.message ?: "Preset backup failed" }
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun importPresetBackup(context: Context, uri: Uri) {
+        scope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                val json = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use {
+                    it.readText()
+                } ?: throw IOException("Android could not open the selected backup.")
+                val imported = PresetBackup.decode(json)
+                presetDao.upsertAll(imported)
+                imported.size
+            }
+            withContext(Dispatchers.Main.immediate) {
+                mutableState.update { current ->
+                    current.copy(
+                        presetMessage = result.fold(
+                            onSuccess = { "Restored $it presets" },
+                            onFailure = { error -> error.message ?: "Preset restore failed" }
+                        )
+                    )
+                }
+            }
         }
     }
 

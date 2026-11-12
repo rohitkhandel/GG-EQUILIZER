@@ -280,8 +280,33 @@ object GlobalEqController {
         if (nativeHandle != 0L) syncNativeLocked()
     }
 
+    /**
+     * Conservative headroom estimate from the four strongest enabled bands
+     * plus positive tone shelves. When the safety limiter is enabled the DSP
+     * input gain is lowered before the soft-knee limiter to reduce clipping risk.
+     */
+    private fun automaticHeadroomCompensationDbLocked(): Float {
+        if (!profile.limiterEnabled) return 0.0f
+        val strongestBandBoost = profile.bands
+            .asSequence()
+            .filter { it.enabled }
+            .map { it.gainDb.coerceAtLeast(0.0f) }
+            .sortedDescending()
+            .take(4)
+            .sum() * 0.45f
+        val toneBoost = (
+            profile.bassGainDb.coerceAtLeast(0.0f) +
+                profile.trebleGainDb.coerceAtLeast(0.0f)
+            ) * 0.25f
+        return (strongestBandBoost + toneBoost).coerceIn(0.0f, 12.0f)
+    }
+
     private fun effectivePreampDbLocked(): Float =
-        (profile.preampGainDb + dvcCompensationDb).coerceIn(-24.0f, 12.0f)
+        (
+            profile.preampGainDb +
+                dvcCompensationDb -
+                automaticHeadroomCompensationDbLocked()
+            ).coerceIn(-24.0f, 12.0f)
 
     private fun syncNativeLocked() {
         val handle = nativeHandle

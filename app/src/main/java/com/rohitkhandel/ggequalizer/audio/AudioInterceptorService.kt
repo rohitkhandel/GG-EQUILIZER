@@ -235,11 +235,16 @@ class AudioInterceptorService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        val playerSummary = activePlayerSummary()
+        val uiPreferences = getSharedPreferences("gg_equalizer_ui_preferences", MODE_PRIVATE)
+        val showPlayerName = uiPreferences.getBoolean("notification_show_player", true)
+        val showProcessingStatus = uiPreferences.getBoolean("notification_show_processing", true)
+        val detectedPlayer = activePlayerSummary()
+        val playerSummary = if (showPlayerName) detectedPlayer else "Audio monitoring"
         val allSessions = audioSessionPackages.keys + trackerSessionPackages.keys
         val sessionCount = allSessions.distinct().size
         val dvc = dvcManager?.snapshot()
         val dvcText = when {
+            !showProcessingStatus -> "GG Equalizer is monitoring audio sessions"
             dvc == null -> "DVC unavailable"
             dvc.enabled -> "DVC on · preamp compensation ${"%.1f".format(dvc.preampCompensationDb)} dB"
             else -> "DVC off"
@@ -262,7 +267,7 @@ class AudioInterceptorService : Service() {
             .setContentText(dvcText)
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("$playerSummary · $sessionText · $dvcText · $attachmentSummary · $trackerDiagnostic")
+                    .bigText(if (showProcessingStatus) "$playerSummary · $sessionText · $dvcText · $attachmentSummary · $trackerDiagnostic" else playerSummary)
             )
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
