@@ -29,7 +29,8 @@ object GlobalEqController {
         val packageName: String,
         var dynamics: DynamicsProcessing? = null,
         var equalizer: Equalizer? = null,
-        var attachment: String = "unavailable"
+        var attachment: String = "unavailable",
+        val appliedZoneGainsDb: FloatArray = FloatArray(BAND_COUNT) { Float.NaN }
     ) {
         fun release() {
             runCatching { dynamics?.release() }
@@ -46,6 +47,8 @@ object GlobalEqController {
 
     private val lock = Any()
     private val sessions = LinkedHashMap<Int, SessionEffects>()
+    private val smoothingHandler = Handler(Looper.getMainLooper())
+    private var smoothingUpdateScheduled = false
     private val listeners = CopyOnWriteArraySet<(GlobalEqSnapshot) -> Unit>()
 
     private var applicationContext: Context? = null
@@ -442,26 +445,69 @@ object GlobalEqController {
 
         // Android EqBand has cutoff + gain but no Q. Sample the complete RBJ
         // response into 32 logarithmic zones rather than guessing a Gaussian shape.
+        if (applyDynamicsZonesLocked(effects, effect)) scheduleSmoothingUpdateLocked()
+        applyLimiterStagesLocked(effect)
+        effect.enabled = profile.enabled
+    }
+
+    @RequiresApi(Build.VERSION_CODES.P)
+    private fun applyDynamicsZonesLocked(
+        effects: SessionEffects,
+        effect: DynamicsProcessing
+    ): Boolean {
         var lowerEdgeHz = 20f
+        var needsAnotherStep = false
         for (index in 0 until BAND_COUNT) {
             val upperEdgeHz = (
                 20.0 * 1_000.0.pow((index + 1).toDouble() / BAND_COUNT)
             ).toFloat().coerceIn(lowerEdgeHz + 0.1f, 20_000f)
             val centerFrequencyHz = kotlin.math.sqrt(lowerEdgeHz * upperEdgeHz)
-            val gainDb = EqResponseMath.profileGainDb(profile, centerFrequencyHz)
+            val targetGainDb = EqResponseMath.profileGainDb(profile, centerFrequencyHz)
+                .coerceIn(-24f, 24f)
+            val previousGainDb = effects.appliedZoneGainsDb[index]
+            val appliedGainDb = if (profile.smoothGains && previousGainDb.isFinite()) {
+                val delta = targetGainDb - previousGainDb
+                if (kotlin.math.abs(delta) > 0.04f) needsAnotherStep = true
+                previousGainDb + delta * 0.32f
+            } else {
+                targetGainDb
+            }
+            effects.appliedZoneGainsDb[index] = appliedGainDb
             effect.setPreEqBandAllChannelsTo(
                 index,
                 DynamicsProcessing.EqBand(
                     profile.enabled,
                     centerFrequencyHz,
-                    gainDb.coerceIn(-24f, 24f)
+                    appliedGainDb
                 )
             )
             lowerEdgeHz = upperEdgeHz
         }
+        return needsAnotherStep
+    }
 
-        applyLimiterStagesLocked(effect)
-        effect.enabled = profile.enabled
+    private fun scheduleSmoothingUpdateLocked() {
+        if (smoothingUpdateScheduled) return
+        smoothingUpdateScheduled = true
+        smoothingHandler.postDelayed({
+            synchronized(lock) {
+                smoothingUpdateScheduled = false
+                if (!profile.enabled || !profile.smoothGains) return@synchronized
+                var needsAnotherStep = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    sessions.values.forEach { effects ->
+                        val dynamics = effects.dynamics ?: return@forEach
+                        if (runCatching {
+                                applyDynamicsZonesLocked(effects, dynamics)
+                            }.getOrDefault(false)
+                        ) {
+                            needsAnotherStep = true
+                        }
+                    }
+                }
+                if (needsAnotherStep) scheduleSmoothingUpdateLocked()
+            }
+        }, 16L)
     }
 
     @RequiresApi(Build.VERSION_CODES.P)

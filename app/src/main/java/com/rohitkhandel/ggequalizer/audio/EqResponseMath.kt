@@ -56,11 +56,17 @@ object EqResponseMath {
         var gain = if (includePreamp) profile.preampGainDb.toDouble() else 0.0
         profile.bands.forEach { band ->
             if (!band.enabled) return@forEach
+            // Lower Q widens each filter and increases intentional overlap with neighbours.
+            val overlapScale = if (profile.bandsOverlapEnabled) {
+                1.5f - profile.bandsOverlapPercent.coerceIn(0f, 100f) / 100f
+            } else {
+                1f
+            }
             gain += filterGainDb(
                 frequencyHz = frequencyHz,
                 centerFrequencyHz = band.frequencyHz,
                 gainDb = band.gainDb,
-                qFactor = band.qFactor,
+                qFactor = (band.qFactor * overlapScale).coerceIn(0.1f, 12f),
                 filterType = band.filterType
             )
         }

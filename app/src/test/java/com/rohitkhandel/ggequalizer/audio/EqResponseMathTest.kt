@@ -109,6 +109,28 @@ class EqResponseMathTest {
     }
 
     @Test
+    fun bandsOverlapWidensTheParametricFilterResponse() {
+        val band = EqBandParameter(
+            frequencyHz = 1_000f,
+            gainDb = 6f,
+            qFactor = 1f,
+            filterType = FILTER_PEAKING
+        )
+        val noOverlap = EqAudioProfile.defaults().copy(
+            bands = listOf(band),
+            bandsOverlapEnabled = false,
+            bandsOverlapPercent = 100f
+        )
+        val wideOverlap = noOverlap.copy(
+            bandsOverlapEnabled = true,
+            bandsOverlapPercent = 100f
+        )
+        val narrowSide = EqResponseMath.profileGainDb(noOverlap, 1_600f)
+        val wideSide = EqResponseMath.profileGainDb(wideOverlap, 1_600f)
+        assertTrue("Higher overlap should widen the curve away from the centre", wideSide > narrowSide)
+    }
+
+    @Test
     fun profileCombinesParametricAndToneFilters() {
         val profile = EqAudioProfile.defaults().copy(
             bands = listOf(
