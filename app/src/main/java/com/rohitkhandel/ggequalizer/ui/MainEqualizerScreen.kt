@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -165,8 +166,8 @@ fun MainEqualizerScreen(
                 .fillMaxWidth()
                 .weight(1f),
             transitionSpec = {
-                (fadeIn(tweenDuration(190)) + slideInHorizontally { it / 12 }) togetherWith
-                    (fadeOut(tweenDuration(130)) + slideOutHorizontally { -it / 16 })
+                (fadeIn(animationSpec = tween(190)) + slideInHorizontally(animationSpec = tween(190)) { it / 12 }) togetherWith
+                    (fadeOut(animationSpec = tween(130)) + slideOutHorizontally(animationSpec = tween(130)) { -it / 16 })
             },
             label = "GG destination transition"
         ) { target ->
@@ -373,6 +374,7 @@ private fun EqualizerPage(
                     },
                     onBandGainChanged = viewModel::setBandGain,
                     spectrumBars = if (state.visualizerEnabled) state.spectrumBars else emptyList(),
+                    accent = accent,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Row(
@@ -688,9 +690,6 @@ private fun formatHz(value: Float): String =
     if (value >= 1000f) String.format(Locale.US, "%.1fk", value / 1000f)
     else String.format(Locale.US, "%.0f", value)
 
-private fun tweenDuration(duration: Int) = androidx.compose.animation.core.tween<androidx.compose.ui.graphics.TransformOrigin>(
-    durationMillis = duration
-)
 
 private val Background = Color(0xFF121212)
 private val Surface = Color(0xFF1E1E1E)

@@ -33,6 +33,7 @@ fun FrequencyResponseCanvas(
     onBandSelected: (Int) -> Unit,
     onBandGainChanged: (Int, Float) -> Unit = { _, _ -> },
     spectrumBars: List<Float> = emptyList(),
+    accent: Color = Color(0xFF42D9F5),
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -117,7 +118,7 @@ fun FrequencyResponseCanvas(
             }
 
             val grid = Color(0xFF303A49)
-            val zeroLine = Color(0xFF64748B)
+            val zeroLine = accent.copy(alpha = 0.35f)
             val frequencyMarks = listOf(20f, 50f, 100f, 200f, 500f, 1_000f, 2_000f, 5_000f, 10_000f, 20_000f)
             frequencyMarks.forEach { frequency ->
                 val x = xForFrequency(frequency)
@@ -192,8 +193,8 @@ fun FrequencyResponseCanvas(
                     path = area,
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xFF35D6FF).copy(alpha = 0.30f),
-                            Color(0xFF35D6FF).copy(alpha = 0.015f),
+                            accent.copy(alpha = 0.30f),
+                            accent.copy(alpha = 0.015f),
                             Color.Transparent
                         ),
                         startY = top,
@@ -202,7 +203,7 @@ fun FrequencyResponseCanvas(
                 )
                 drawPath(
                     path = curve,
-                    color = Color(0xFF38D8FF),
+                    color = accent,
                     style = Stroke(width = 3f, cap = StrokeCap.Round)
                 )
             }
@@ -214,19 +215,19 @@ fun FrequencyResponseCanvas(
                 )
                 if (index == selectedBandIndex) {
                     drawCircle(
-                        color = Color(0xFF49E1FF).copy(alpha = 0.22f),
+                        color = accent.copy(alpha = 0.22f),
                         radius = 12f,
                         center = position
                     )
                     drawCircle(
-                        color = Color(0xFF8AF0FF),
+                        color = accent,
                         radius = 6f,
                         center = position,
                         style = Stroke(width = 2f)
                     )
                 } else {
                     drawCircle(
-                        color = if (band.enabled) Color(0xFFD8F8FF) else Color(0xFF64748B),
+                        color = if (band.enabled) accent.copy(alpha = 0.92f) else accent.copy(alpha = 0.35f),
                         radius = 3.5f,
                         center = position
                     )
