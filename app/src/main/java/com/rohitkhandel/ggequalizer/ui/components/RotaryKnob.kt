@@ -125,7 +125,7 @@ fun RotaryKnob(
             Canvas(Modifier.size(knobSize)) {
                 val radius = size.minDimension * 0.365f
                 val c = center
-                val stroke = (size.minDimension * 0.045f).coerceAtLeast(2.4.dp.toPx())
+                val stroke = (size.minDimension * 0.058f).coerceAtLeast(3.2.dp.toPx())
 
                 drawCircle(Color.Black.copy(alpha = 0.72f), radius * 1.10f, c + Offset(0f, 2.dp.toPx()))
                 drawCircle(
@@ -165,13 +165,13 @@ fun RotaryKnob(
                 )
                 if (normalized > 0.001f) {
                     drawArc(
-                        accent.copy(alpha = 0.18f),
+                        accent.copy(alpha = 0.32f),
                         startAngle = 135f,
                         sweepAngle = 270f * normalized,
                         useCenter = false,
                         topLeft = arcTopLeft,
                         size = Size(arcDiameter, arcDiameter),
-                        style = Stroke(width = stroke + 6.dp.toPx(), cap = StrokeCap.Round)
+                        style = Stroke(width = stroke + 12.dp.toPx(), cap = StrokeCap.Round)
                     )
                     drawArc(
                         accent,

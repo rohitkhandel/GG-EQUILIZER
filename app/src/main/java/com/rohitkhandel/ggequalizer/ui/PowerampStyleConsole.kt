@@ -62,7 +62,7 @@ import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.pow
 
-private val StudioBlack = Color(0xFF050608)
+private val StudioBlack = Color(0xFF000000)
 private val StudioSurface = Color(0xFF15191F)
 private val StudioLine = Color(0xFF343B45)
 private val StudioText = Color(0xFFF1F3F5)
@@ -170,7 +170,7 @@ fun StudioTopBar(
 
 @Composable
 fun StudioBottomDock(selected: String, accent: Color, onSelect: (String) -> Unit) {
-    val destinations = listOf("EQUALIZER", "TONE", "PRESETS", "SETTINGS")
+    val destinations = listOf("EQUALIZER", "TONE", "SETTINGS")
     Row(
         Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 9.dp, vertical = 4.dp)
             .height(54.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF17191D))
@@ -233,8 +233,7 @@ private fun StudioDockGlyph(destination: String, active: Boolean, accent: Color)
             else -> {
                 for (index in 0..2) {
                     val y = h * (0.25f + index * 0.25f)
-                    drawLine(tint, Offset(w * 0.14f, y), Offset(w * 0.86f, y), 2.6.dp.toPx(), cap = StrokeCap.Round)
-                    drawCircle(tint, w * 0.075f, Offset(w * (if (index == 1) 0.36f else 0.66f), y))
+                    drawLine(tint, Offset(w * 0.14f, y), Offset(w * 0.86f, y), 3.2.dp.toPx(), cap = StrokeCap.Round)
                 }
             }
         }
@@ -249,13 +248,14 @@ fun StudioEqualizerWorkspace(
     onVisualizerToggle: (Boolean) -> Unit,
     onSave: () -> Unit,
     onImport: () -> Unit,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    onOpenPresets: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().background(StudioBlack)) {
         Box(Modifier.fillMaxWidth().weight(1f)) { StudioBandWorkspace(state, viewModel, accent) }
         StudioSpectrumStrip(state, accent) { onVisualizerToggle(!state.visualizerEnabled) }
         StudioPlayerBadge(state)
-        StudioEqActionRack(state, accent, viewModel, onSave, onImport, onReset)
+        StudioEqActionRack(state, accent, viewModel, onSave, onImport, onReset, onOpenPresets)
         StudioBassTrebleRow(state, viewModel)
     }
 }
@@ -277,7 +277,8 @@ private fun StudioBandWorkspace(state: EqUiState, viewModel: EqViewModel, accent
             Text("PRE", color = StudioMuted, fontSize = 7.sp, fontWeight = FontWeight.Black)
             StudioGainFader(
                 value = state.preampGainDb, label = "PREAMP", accent = StudioBlue, selected = false,
-                compact = false, modifier = Modifier.weight(1f).fillMaxWidth(), onValueChange = viewModel::setPreampGain
+                compact = false, modifier = Modifier.weight(1f).fillMaxWidth(), fillFromTop = true,
+                onValueChange = viewModel::setPreampGain
             )
             Text(String.format(Locale.US, "%+.1f", state.preampGainDb), color = StudioText, fontSize = 7.sp, fontWeight = FontWeight.Bold)
         }
@@ -344,8 +345,9 @@ private fun StudioBandPanel(
         }
         Row(Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             StudioGainFader(
-                value = band.gainDb, label = "GAIN", accent = StudioRed, selected = selected, compact = false,
-                modifier = Modifier.width(53.dp).fillMaxHeight(), onTouchStart = onSelect, onValueChange = onGain
+                value = band.gainDb, valueRange = -15f..15f, label = "GAIN", accent = StudioRed,
+                selected = selected, compact = false, modifier = Modifier.width(53.dp).fillMaxHeight(),
+                onTouchStart = onSelect, onValueChange = onGain
             )
             Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -426,7 +428,7 @@ private fun StudioValueBadge(label: String, value: String) {
 @Composable
 private fun StudioEqActionRack(
     state: EqUiState, accent: Color, viewModel: EqViewModel,
-    onSave: () -> Unit, onImport: () -> Unit, onReset: () -> Unit
+    onSave: () -> Unit, onImport: () -> Unit, onReset: () -> Unit, onOpenPresets: () -> Unit
 ) {
     var presetMenu by rememberSaveable { mutableStateOf(false) }
     var moreMenu by rememberSaveable { mutableStateOf(false) }
@@ -455,6 +457,7 @@ private fun StudioEqActionRack(
                 state.presets.forEach { preset ->
                     DropdownMenuItem(text = { Text(preset.presetName) }, onClick = { presetMenu = false; viewModel.applyPreset(preset) })
                 }
+                DropdownMenuItem(text = { Text("Browse preset library…") }, onClick = { presetMenu = false; onOpenPresets() })
             }
         }
         Box {
@@ -492,16 +495,24 @@ private fun StudioPlayerBadge(state: EqUiState) {
 
 @Composable
 private fun StudioGainFader(
-    value: Float, label: String, accent: Color, selected: Boolean, compact: Boolean,
-    modifier: Modifier, onTouchStart: () -> Unit = {}, onValueChange: (Float) -> Unit
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float> = -12f..12f,
+    label: String,
+    accent: Color,
+    selected: Boolean,
+    compact: Boolean,
+    modifier: Modifier,
+    onTouchStart: () -> Unit = {},
+    fillFromTop: Boolean = false,
+    onValueChange: (Float) -> Unit
 ) {
     val callback = rememberUpdatedState(onValueChange)
     val local = remember { mutableFloatStateOf(value) }
     val dragging = remember { mutableStateOf(false) }
     LaunchedEffect(value) { if (!dragging.value) local.floatValue = value }
-    val min = -12f
-    val max = 12f
-    val range = max - min
+    val min = valueRange.start
+    val max = valueRange.endInclusive
+    val range = (max - min).coerceAtLeast(0.001f)
     Column(modifier.padding(horizontal = if (compact) 0.dp else 1.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(String.format(Locale.US, "%+.1f", local.floatValue), color = if (selected) accent else StudioText, fontSize = if (compact) 6.sp else 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
         Canvas(
@@ -536,14 +547,17 @@ private fun StudioGainFader(
             val center = size.width * 0.5f
             val valueFraction = ((local.floatValue - min) / range).coerceIn(0f, 1f)
             val yValue = bottom - valueFraction * usable
-            val yZero = bottom - 0.5f * usable
+            val zeroFraction = ((0f - min) / range).coerceIn(0f, 1f)
+            val yZero = bottom - zeroFraction * usable
             val track = if (compact) 2.dp.toPx() else 3.dp.toPx()
             val capWidth = if (compact) 17.dp.toPx() else 25.dp.toPx()
             val capHeight = if (compact) 9.dp.toPx() else 46.dp.toPx()
             drawLine(Color(0xFF353C45), Offset(center, top), Offset(center, bottom), track, StrokeCap.Round)
             drawLine(Color(0xFF7C8793).copy(alpha = 0.48f), Offset(center - 7.dp.toPx(), yZero), Offset(center + 7.dp.toPx(), yZero), 0.8.dp.toPx())
-            drawLine(accent.copy(alpha = 0.19f), Offset(center, yZero), Offset(center, yValue), if (selected) 8.dp.toPx() else 5.dp.toPx(), StrokeCap.Round)
-            drawLine(accent.copy(alpha = if (selected) 0.95f else 0.65f), Offset(center, yZero), Offset(center, yValue), track, StrokeCap.Round)
+            val fillStart = if (fillFromTop) top else yValue
+            val fillEnd = if (fillFromTop) yValue else bottom
+            drawLine(accent.copy(alpha = 0.24f), Offset(center, fillStart), Offset(center, fillEnd), 8.dp.toPx(), StrokeCap.Round)
+            drawLine(accent, Offset(center, fillStart), Offset(center, fillEnd), track, StrokeCap.Round)
             for (tick in 0..12) {
                 val y = top + usable * tick / 12f
                 val length = if (tick % 3 == 0) 5.dp.toPx() else 2.5.dp.toPx()

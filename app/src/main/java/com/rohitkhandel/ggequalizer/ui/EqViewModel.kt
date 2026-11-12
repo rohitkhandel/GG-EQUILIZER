@@ -125,7 +125,7 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setBandGain(index: Int, gainDb: Float) {
-        updateBand(index) { it.copy(gainDb = gainDb.coerceIn(-12f, 12f)) }
+        updateBand(index) { it.copy(gainDb = gainDb.coerceIn(-15f, 15f)) }
     }
 
     fun setBandFrequency(index: Int, frequencyHz: Float) {

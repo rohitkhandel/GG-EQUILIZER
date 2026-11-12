@@ -193,7 +193,8 @@ fun MainEqualizerScreen(
                     onImport = {
                         importLauncher.launch(arrayOf("text/plain", "application/json", "application/octet-stream"))
                     },
-                    onReset = viewModel::resetAll
+                    onReset = viewModel::resetAll,
+                    onOpenPresets = { page = ConsolePage.PRESETS }
                 )
                 ConsolePage.TONE -> StudioTonePage(
                     state = state,
