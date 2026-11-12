@@ -2,6 +2,7 @@ package com.rohitkhandel.ggequalizer.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,7 @@ fun FrequencyResponseCanvas(
     bands: List<EqBandUiState>,
     selectedBandIndex: Int,
     onBandSelected: (Int) -> Unit,
+    onBandGainChanged: (Int, Float) -> Unit = { _, _ -> },
     spectrumBars: List<Float> = emptyList(),
     modifier: Modifier = Modifier
 ) {
@@ -65,6 +67,32 @@ fun FrequencyResponseCanvas(
                             nearest?.let(onBandSelected)
                         }
                     }
+                }
+                .pointerInput(bands, onBandGainChanged) {
+                    var activeBand = -1
+                    detectDragGestures(
+                        onDragStart = { point ->
+                            val normalized = (point.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)
+                            val frequency = (20.0 * 1000.0.pow(normalized.toDouble())).toFloat()
+                            activeBand = bands.indices.minByOrNull { index ->
+                                abs(ln(bands[index].frequencyHz.coerceAtLeast(1f) / frequency.coerceAtLeast(1f)))
+                            } ?: -1
+                            if (activeBand >= 0) onBandSelected(activeBand)
+                        },
+                        onDrag = { change, _ ->
+                            if (activeBand >= 0) {
+                                val topInset = 12f
+                                val bottomInset = 14f
+                                val usableHeight = (size.height - topInset - bottomInset).coerceAtLeast(1f)
+                                val normalized = ((change.position.y - topInset) / usableHeight).coerceIn(0f, 1f)
+                                val gain = 24f - normalized * 48f
+                                onBandGainChanged(activeBand, gain.coerceIn(-24f, 24f))
+                                change.consume()
+                            }
+                        },
+                        onDragEnd = { activeBand = -1 },
+                        onDragCancel = { activeBand = -1 }
+                    )
                 }
         ) {
             if (size.width <= 0f || size.height <= 0f) return@Canvas

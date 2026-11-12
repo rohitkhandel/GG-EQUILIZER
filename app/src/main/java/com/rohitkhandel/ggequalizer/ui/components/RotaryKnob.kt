@@ -1,6 +1,8 @@
 package com.rohitkhandel.ggequalizer.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +41,7 @@ fun RotaryKnob(
 ) {
     val range = max(0.0001f, valueRange.endInclusive - valueRange.start)
     val normalized = ((value - valueRange.start) / range).coerceIn(0f, 1f)
+    val animatedNormalized by animateFloatAsState(normalized, animationSpec = tween(120), label = "knob-progress")
 
     Column(
         modifier = modifier,
@@ -51,7 +54,7 @@ fun RotaryKnob(
                 .pointerInput(valueRange, value) {
                     detectDragGestures { change, dragAmount ->
                         change.consume()
-                        val delta = -dragAmount.y / 140f * range
+                        val delta = -dragAmount.y / 210f * range
                         onValueChange((value + delta).coerceIn(
                             valueRange.start,
                             valueRange.endInclusive
@@ -85,7 +88,7 @@ fun RotaryKnob(
                 drawArc(
                     color = accent.copy(alpha = 0.16f),
                     startAngle = 135f,
-                    sweepAngle = 270f * normalized,
+                    sweepAngle = 270f * animatedNormalized,
                     useCenter = false,
                     topLeft = topLeft,
                     size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
@@ -114,7 +117,7 @@ fun RotaryKnob(
                         center.y + sin(angle).toFloat() * tickInner
                     )
                     drawLine(
-                        color = if (index / 24f <= normalized) accent.copy(alpha = 0.90f)
+                        color = if (index / 24f <= animatedNormalized) accent.copy(alpha = 0.90f)
                         else Color(0xFF536173),
                         start = inner,
                         end = outer,
