@@ -164,7 +164,7 @@ fun MainEqualizerScreen(
         modifier = Modifier.fillMaxSize(),
         containerColor = Carbon,
         topBar = {
-            ConsoleTopBar(
+            StudioTopBar(
                 state = state,
                 accent = accent,
                 onPower = viewModel::setMasterEnabled,
@@ -181,10 +181,10 @@ fun MainEqualizerScreen(
             )
         },
         bottomBar = {
-            ConsoleBottomBar(
-                selected = page,
+            StudioBottomDock(
+                selected = page.name,
                 accent = accent,
-                onSelect = { page = it }
+                onSelect = { destination -> page = ConsolePage.valueOf(destination) }
             )
         }
     ) { inset ->
@@ -198,7 +198,7 @@ fun MainEqualizerScreen(
             label = "console page swap"
         ) { destination ->
             when (destination) {
-                ConsolePage.EQUALIZER -> EqualizerConsole(
+                ConsolePage.EQUALIZER -> StudioEqualizerWorkspace(
                     state = state,
                     viewModel = viewModel,
                     accent = accent,
@@ -207,7 +207,7 @@ fun MainEqualizerScreen(
                         onVisualizerToggle(it)
                     }
                 )
-                ConsolePage.TONE -> ToneStereoRack(
+                ConsolePage.TONE -> StudioTonePage(
                     state = state,
                     viewModel = viewModel,
                     accent = accent
