@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import android.os.SystemClock
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -397,17 +399,39 @@ private fun StudioGainFader(
         Canvas(
             Modifier.weight(1f).fillMaxWidth()
                 .pointerInput(Unit) {
-                    fun valueAt(y: Float): Float = (min + (1f - y / size.height.coerceAtLeast(1f)).coerceIn(0f, 1f) * range).coerceIn(min, max)
+                    var lastDispatch = 0L
+                    fun valueAt(y: Float): Float =
+                        (min + (1f - y / size.height.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f) * range)
+                            .coerceIn(min, max)
+                    fun dispatch(force: Boolean = false) {
+                        val now = SystemClock.uptimeMillis()
+                        if (force || lastDispatch == 0L || now - lastDispatch >= 16L) {
+                            callback.value(local.floatValue)
+                            lastDispatch = now
+                        }
+                    }
                     detectDragGestures(
-                        onDragStart = { p -> dragging.value = true; local.floatValue = valueAt(p.y); callback.value(local.floatValue) },
-                        onDrag = { change, _ -> change.consume(); local.floatValue = valueAt(change.position.y); callback.value(local.floatValue) },
-                        onDragEnd = { callback.value(local.floatValue); dragging.value = false },
-                        onDragCancel = { callback.value(local.floatValue); dragging.value = false }
+                        onDragStart = { p ->
+                            dragging.value = true
+                            lastDispatch = 0L
+                            local.floatValue = valueAt(p.y)
+                            dispatch()
+                        },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            local.floatValue = valueAt(change.position.y)
+                            dispatch()
+                        },
+                        onDragEnd = { dispatch(force = true); dragging.value = false },
+                        onDragCancel = { dispatch(force = true); dragging.value = false }
                     )
                 }
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onTap = { p -> local.floatValue = (min + (1f - p.y / size.height.coerceAtLeast(1f)).coerceIn(0f, 1f) * range); callback.value(local.floatValue) },
+                        onTap = { p ->
+                            local.floatValue = min + (1f - p.y / size.height.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f) * range
+                            callback.value(local.floatValue)
+                        },
                         onDoubleTap = { local.floatValue = 0f; callback.value(0f) }
                     )
                 }
