@@ -359,7 +359,7 @@ object GlobalEqController {
                 profile.preampGainDb
             maximumResponseDb = maxOf(maximumResponseDb, response)
         }
-        return maximumResponseDb.coerceIn(0.0f, 18.0f)
+        return maximumResponseDb.coerceIn(0.0f, 24.0f)
     }
 
     private fun gaussianOctaveWeight(frequencyHz: Float, centerHz: Float, sigmaOctaves: Float): Float {
@@ -384,7 +384,9 @@ object GlobalEqController {
             weightedGain += band.gainDb * weight
             totalWeight += weight
         }
-        return if (totalWeight > 0.0001f) weightedGain / totalWeight else 0.0f
+        // Summed bell responses produce real adjacent-band overlap. Normalizing
+        // by totalWeight would flatten an isolated boosted band into a shelf.
+        return weightedGain
     }
 
     /** Broad low shelf plus controlled 31 / 62 / 125 Hz warm-bass overlap. */
