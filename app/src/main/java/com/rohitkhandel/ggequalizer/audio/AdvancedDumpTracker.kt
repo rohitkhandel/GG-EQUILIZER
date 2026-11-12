@@ -251,8 +251,7 @@ class AdvancedDumpTracker(
             .redirectErrorStream(true)
             .start()
         val output = process.inputStream.bufferedReader().useLines { lines ->
-            lines.take(MAX_DUMP_LINES).joinToString("
-")
+            lines.take(MAX_DUMP_LINES).joinToString(separator = System.lineSeparator())
         }
         if (!process.waitFor(DUMPSYS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
             process.destroyForcibly()
