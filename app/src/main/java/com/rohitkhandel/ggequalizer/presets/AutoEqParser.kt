@@ -44,12 +44,12 @@ object AutoEqParser {
     fun parseText(text: String, presetName: String = "Imported AutoEQ"): ParsedAutoEqPreset {
         require(text.isNotBlank()) { "The selected file is empty." }
         val preamp = preampRegex.find(text)?.groupValues?.getOrNull(1)?.toFloatOrNull() ?: 0.0f
-        val graphicHeader = Regex("(?im)^\s*GraphicEQ\s*:").find(text)
+        val graphicHeader = Regex("""(?im)^\s*GraphicEQ\s*:""").find(text)
 
         if (graphicHeader != null) {
             val afterHeader = text.substring(graphicHeader.range.last + 1)
             val graphicSection = afterHeader
-                .split(Regex("(?im)\\n\\s*(?=Filter\\s*\\d*\\s*:|Preamp\\s*:)"), limit = 2)
+                .split(Regex("""(?im)\n\s*(?=Filter\s*\d*\s*:|Preamp\s*:)"""), limit = 2)
                 .firstOrNull()
                 .orEmpty()
             val samples = graphicPairRegex.findAll(graphicSection).mapNotNull { match ->
@@ -57,7 +57,7 @@ object AutoEqParser {
                 val gain = match.groupValues[2].toFloatOrNull()
                 if (frequency == null || gain == null || frequency <= 0.0f) null
                 else frequency to gain
-            }.sortedBy { it.first }.distinctBy { it.first }
+            }.sortedBy { it.first }.distinctBy { it.first }.toList()
 
             require(samples.size >= 2) {
                 "GraphicEQ header found, but no usable frequency/gain pairs were parsed."
@@ -95,7 +95,7 @@ object AutoEqParser {
                 filterType = type,
                 enabled = enabled
             ).sanitized()
-        }.sortedBy { it.frequencyHz }
+        }.sortedBy { it.frequencyHz }.toList()
 
         require(filters.isNotEmpty()) {
             "No supported GraphicEQ data or PK/LS/HS Filter entries were found."
