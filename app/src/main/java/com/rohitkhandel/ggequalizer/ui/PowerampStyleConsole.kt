@@ -882,11 +882,21 @@ fun StudioTonePage(state: EqUiState, viewModel: EqViewModel, accent: Color) {
         }
 
         Row(Modifier.fillMaxWidth().weight(0.25f), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            RotaryKnob(
-                label = "STEREO WIDTH", value = state.stereoWidthPercent, valueRange = 0f..200f, defaultValue = 100f,
-                valueText = "${state.stereoWidthPercent.toInt()}%", onValueChange = viewModel::setStereoWidthPercent,
-                accent = accent, knobSize = 80.dp, modifier = Modifier.weight(1f)
-            )
+            Column(
+                Modifier.weight(1f).padding(horizontal = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text("STEREO WIDTH", color = StudioMuted, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    "Unavailable for external-player sessions",
+                    color = StudioMuted.copy(alpha = 0.78f),
+                    fontSize = 8.sp,
+                    lineHeight = 12.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
             RotaryKnob(
                 label = "BALANCE", value = state.stereoBalance, valueRange = -1f..1f, defaultValue = 0f,
                 valueText = studioBalance(state.stereoBalance), onValueChange = viewModel::setStereoBalance,

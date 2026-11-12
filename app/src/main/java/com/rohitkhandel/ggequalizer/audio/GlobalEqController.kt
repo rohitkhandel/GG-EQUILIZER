@@ -328,6 +328,7 @@ object GlobalEqController {
         synchronized(lock) {
             profile = profile.copy(stereoBalance = balance.coerceIn(-1f, 1f))
             syncNativeLocked()
+            applyInputGainToAllSessionsLocked()
         }
         publishSnapshot()
     }
@@ -530,11 +531,30 @@ object GlobalEqController {
     }
 
     private fun applySessionPreampLocked(effects: SessionEffects) {
-        val inputGain = profile.preampGainDb + dvcCompensationDb -
+        val dynamics = effects.dynamics ?: return
+        val baseGain = profile.preampGainDb + dvcCompensationDb -
             automaticHeadroomDbLocked()
+        val leftAttenuation = if (profile.stereoBalance > 0f) {
+            balanceAttenuationDb(profile.stereoBalance)
+        } else {
+            0f
+        }
+        val rightAttenuation = if (profile.stereoBalance < 0f) {
+            balanceAttenuationDb(-profile.stereoBalance)
+        } else {
+            0f
+        }
         runCatching {
-            effects.dynamics?.setInputGainAllChannelsTo(inputGain.coerceIn(-24f, 12f))
+            dynamics.setInputGainbyChannel(0, (baseGain + leftAttenuation).coerceIn(-24f, 12f))
+            dynamics.setInputGainbyChannel(1, (baseGain + rightAttenuation).coerceIn(-24f, 12f))
         }.onFailure { Log.w(TAG, "Session input gain update failed", it) }
+    }
+
+    private fun balanceAttenuationDb(amount: Float): Float {
+        // The public session input-gain range is kept within the same -24 dB
+        // headroom envelope used by preamp compensation.
+        val linearGain = (1f - amount.coerceIn(0f, 1f)).coerceAtLeast(0.06309573f)
+        return (20.0 * kotlin.math.log10(linearGain.toDouble())).toFloat()
     }
 
     private fun applyInputGainToAllSessionsLocked() {
