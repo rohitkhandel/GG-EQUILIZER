@@ -533,11 +533,16 @@ object GlobalEqController {
         for (index in 0 until BAND_COUNT) {
             // Allocate more of Android's fixed 32 EQ zones below 500 Hz,
             // where bass shelves and kick fundamentals need finer resolution.
-            val zonePosition = (index + 0.5) / BAND_COUNT.toDouble()
-            val warpedPosition = zonePosition.pow(1.28)
-            val centerFrequencyHz = (20.0 * 1_000.0.pow(warpedPosition))
+            // DynamicsProcessing.EqBand requires the upper cutoff of each zone.
+            val lowerPosition = (index.toDouble() / BAND_COUNT).pow(1.28)
+            val upperPosition = ((index + 1).toDouble() / BAND_COUNT).pow(1.28)
+            val centerPosition = (lowerPosition + upperPosition) * 0.5
+            val centerFrequencyHz = (20.0 * 1_000.0.pow(centerPosition))
                 .toFloat()
                 .coerceIn(20f, 20_000f)
+            val upperEdgeHz = (20.0 * 1_000.0.pow(upperPosition))
+                .toFloat()
+                .coerceIn(centerFrequencyHz + 0.1f, 20_000f)
             val targetGainDb = EqResponseMath.profileGainDb(profile, centerFrequencyHz)
                 .coerceIn(-24f, 24f)
             val previousGainDb = effects.appliedZoneGainsDb[index]
