@@ -64,7 +64,7 @@ class FftAnalyzer(context: Context) {
                 val desiredSize = TARGET_CAPTURE_SIZE.coerceIn(range[0], range[1])
                 val legalSize = Integer.highestOneBit(desiredSize)
                     .coerceAtLeast(range[0])
-                candidate.captureSize = legalSize
+                check(candidate.setCaptureSize(legalSize) == Visualizer.SUCCESS)
 
                 val rate = Visualizer.getMaxCaptureRate().coerceAtMost(MAX_CAPTURE_RATE)
                 val listener = object : Visualizer.OnDataCaptureListener {
@@ -80,16 +80,20 @@ class FftAnalyzer(context: Context) {
                         samplingRate: Int
                     ) {
                         if (fft == null) return
-                        val bars = convertFft(fft, candidate.captureSize, samplingRate)
+                        val bars = convertFft(fft, candidate.getCaptureSize(), samplingRate)
                         val smoothed = smooth(bars)
                         callback?.invoke(smoothed)
                     }
                 }
 
-                check(candidate.setDataCaptureListener(listener, rate, false, true)) {
+                check(
+                    candidate.setDataCaptureListener(listener, rate, false, true) == Visualizer.SUCCESS
+                ) {
                     "Android rejected FFT data capture"
                 }
-                candidate.enabled = true
+                check(candidate.setEnabled(true) == Visualizer.SUCCESS) {
+                    "Android could not enable the Visualizer"
+                }
                 captureRate = rate
                 true
             }.getOrElse { error ->
@@ -118,7 +122,7 @@ class FftAnalyzer(context: Context) {
         captureRate = 0
         smoothLevels.fill(0.0f)
         if (current != null) {
-            runCatching { current.enabled = false }
+            runCatching { current.setEnabled(false) }
             runCatching { current.setDataCaptureListener(null, 0, false, false) }
             runCatching { current.release() }
         }
