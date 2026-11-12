@@ -71,9 +71,9 @@ class AudioInterceptorService : Service() {
             val nextSessions = snapshot.sessions.associateBy { it.audioSessionId }
 
             trackerSessionPackages.keys.toList().forEach { sessionId ->
-                if (sessionId !in nextSessions) {
+                if (!nextSessions.containsKey(sessionId)) {
                     trackerSessionPackages.remove(sessionId)
-                    if (sessionId !in audioSessionPackages) {
+                    if (!audioSessionPackages.containsKey(sessionId)) {
                         GlobalEqController.detachSession(sessionId)
                     }
                 }
@@ -144,7 +144,7 @@ class AudioInterceptorService : Service() {
         }
 
         trackerSessionPackages.keys.forEach { sessionId ->
-            if (sessionId !in audioSessionPackages) {
+            if (!audioSessionPackages.containsKey(sessionId)) {
                 GlobalEqController.detachSession(sessionId)
             }
         }
@@ -174,7 +174,7 @@ class AudioInterceptorService : Service() {
         if (sessionId < 0) return
 
         val previousPackage = audioSessionPackages.remove(sessionId)
-        if (sessionId !in trackerSessionPackages) {
+        if (!trackerSessionPackages.containsKey(sessionId)) {
             GlobalEqController.detachSession(sessionId)
         }
         Log.i(
