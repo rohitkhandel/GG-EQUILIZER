@@ -352,7 +352,7 @@ object GlobalEqController {
         var maximumResponseDb = 0.0f
         for (index in 0..64) {
             val progress = index / 64.0f
-            val frequencyHz = (20.0 * 1000.0.pow(progress)).toFloat()
+            val frequencyHz = (20.0 * 1000.0.pow(progress.toDouble())).toFloat()
             val response = smoothBandGainAtFrequency(profile.bands, frequencyHz) +
                 bassToneGainAtFrequency(frequencyHz) +
                 trebleToneGainAtFrequency(frequencyHz) +

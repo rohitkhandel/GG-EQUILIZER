@@ -1,5 +1,6 @@
 package com.rohitkhandel.ggequalizer.ui.components
 
+import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -75,6 +76,8 @@ fun FrequencyResponseCanvas(
                 }
                 .pointerInput(Unit) {
                     var activeBand = -1
+                    var pendingGain = 0.0f
+                    var lastDispatchMs = 0L
                     detectDragGestures(
                         onDragStart = { point ->
                             val current = currentBands
@@ -85,6 +88,7 @@ fun FrequencyResponseCanvas(
                             } ?: -1
                             if (activeBand >= 0) {
                                 pendingGain = current[activeBand].gainDb
+                                lastDispatchMs = 0L
                                 currentOnBandSelected(activeBand)
                             }
                         },
@@ -94,13 +98,24 @@ fun FrequencyResponseCanvas(
                                 val bottomInset = 14f
                                 val usableHeight = (size.height - topInset - bottomInset).coerceAtLeast(1f)
                                 val normalized = ((change.position.y - topInset) / usableHeight).coerceIn(0f, 1f)
-                                val gain = 12f - normalized * 24f
-                                currentOnBandGainChanged(activeBand, gain.coerceIn(-12f, 12f))
+                                val gain = (12f - normalized * 24f).coerceIn(-12f, 12f)
+                                pendingGain = gain
+                                val now = SystemClock.uptimeMillis()
+                                if (lastDispatchMs == 0L || now - lastDispatchMs >= 20L) {
+                                    currentOnBandGainChanged(activeBand, gain)
+                                    lastDispatchMs = now
+                                }
                                 change.consume()
                             }
                         },
-                        onDragEnd = { activeBand = -1 },
-                        onDragCancel = { activeBand = -1 }
+                        onDragEnd = {
+                            if (activeBand >= 0) currentOnBandGainChanged(activeBand, pendingGain)
+                            activeBand = -1
+                        },
+                        onDragCancel = {
+                            if (activeBand >= 0) currentOnBandGainChanged(activeBand, pendingGain)
+                            activeBand = -1
+                        }
                     )
                 }
         ) {
