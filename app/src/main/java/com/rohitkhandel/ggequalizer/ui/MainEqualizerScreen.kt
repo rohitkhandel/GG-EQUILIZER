@@ -11,6 +11,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -670,10 +671,89 @@ private fun BottomAudiophileNavigation(
             ) {
                 TextButton(onClick = { onSelect(item) }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(item.glyph, color = if (active) accent else MutedText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        GgNavigationIcon(item, if (active) accent else MutedText)
                         Text(item.title, color = if (active) accent else MutedText, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GgNavigationIcon(destination: GgDestination, tint: Color) {
+    Canvas(Modifier.size(22.dp)) {
+        val stroke = 1.8.dp.toPx()
+        val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+        val radius = size.minDimension * 0.34f
+        when (destination) {
+            GgDestination.EQUALIZER -> {
+                val xs = listOf(0.22f, 0.50f, 0.78f).map { size.width * it }
+                val knobYs = listOf(0.34f, 0.67f, 0.44f).map { size.height * it }
+                xs.forEachIndexed { index, x ->
+                    drawLine(
+                        tint.copy(alpha = 0.48f),
+                        androidx.compose.ui.geometry.Offset(x, size.height * 0.12f),
+                        androidx.compose.ui.geometry.Offset(x, size.height * 0.88f),
+                        strokeWidth = stroke
+                    )
+                    drawRoundRect(
+                        tint,
+                        topLeft = androidx.compose.ui.geometry.Offset(x - 2.5.dp.toPx(), knobYs[index] - 2.dp.toPx()),
+                        size = androidx.compose.ui.geometry.Size(5.dp.toPx(), 4.dp.toPx()),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx())
+                    )
+                }
+            }
+            GgDestination.TONE -> {
+                drawCircle(tint.copy(alpha = 0.28f), radius + 3.dp.toPx(), center, style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
+                drawCircle(tint, radius * 0.78f, center, style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
+                drawLine(
+                    tint, center,
+                    androidx.compose.ui.geometry.Offset(center.x + radius * 0.52f, center.y - radius * 0.62f),
+                    strokeWidth = stroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+                drawCircle(tint, 2.dp.toPx(), center)
+            }
+            GgDestination.PRESETS -> {
+                val left = size.width * 0.22f
+                val top = size.height * 0.12f
+                val width = size.width * 0.56f
+                val height = size.height * 0.76f
+                drawRoundRect(
+                    tint,
+                    topLeft = androidx.compose.ui.geometry.Offset(left, top),
+                    size = androidx.compose.ui.geometry.Size(width, height),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke)
+                )
+                for (line in 0..2) {
+                    val y = top + height * (0.30f + line * 0.23f)
+                    drawLine(
+                        tint,
+                        androidx.compose.ui.geometry.Offset(left + 4.dp.toPx(), y),
+                        androidx.compose.ui.geometry.Offset(left + width - 4.dp.toPx(), y),
+                        strokeWidth = stroke,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+                }
+            }
+            GgDestination.SETTINGS -> {
+                for (tooth in 0 until 8) {
+                    val angle = tooth * (Math.PI / 4.0)
+                    val inner = radius * 0.78f
+                    val outer = radius + 4.dp.toPx()
+                    drawLine(
+                        tint,
+                        androidx.compose.ui.geometry.Offset(center.x + kotlin.math.cos(angle).toFloat() * inner, center.y + kotlin.math.sin(angle).toFloat() * inner),
+                        androidx.compose.ui.geometry.Offset(center.x + kotlin.math.cos(angle).toFloat() * outer, center.y + kotlin.math.sin(angle).toFloat() * outer),
+                        strokeWidth = stroke + 0.4.dp.toPx(),
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+                }
+                drawCircle(tint, radius, center, style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
+                drawCircle(tint, 2.2.dp.toPx(), center)
             }
         }
     }

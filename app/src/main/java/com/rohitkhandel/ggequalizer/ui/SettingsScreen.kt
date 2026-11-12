@@ -101,7 +101,7 @@ fun SettingsScreen(
                 value = "Managed by Android and the active player"
             )
             Text(
-                "The native C++ engine processes PCM buffers owned by GG. Third-party player audio is modified only through compatible Android audio sessions; a normal app cannot replace the system-wide output mixer.",
+                "The native C++ engine exposes a PCM-block processing API; this app does not yet own a continuous playback PCM stream. Third-party player audio is modified only through compatible Android audio sessions; a normal app cannot replace the system-wide output mixer.",
                 color = Muted,
                 fontSize = 10.sp
             )
