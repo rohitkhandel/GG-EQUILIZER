@@ -514,7 +514,7 @@ private fun defaultEqBands(): List<EqBandParameter> =
     List(NativeDspBridge.MAX_PARAMETRIC_BANDS) { index ->
         val fraction = index.toDouble() /
             (NativeDspBridge.MAX_PARAMETRIC_BANDS - 1).toDouble()
-        EqBandParameter(frequencyHz = 20.0 * 1000.0.pow(fraction).toFloat())
+        EqBandParameter(frequencyHz = 20.0f * 1000.0.pow(fraction).toFloat())
     }
 
 data class EqAudioProfile(
