@@ -15,16 +15,18 @@ import androidx.core.app.NotificationCompat
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Foreground coordinator for session-attached effects, DVC headroom management
- * and media-player notifications. Session IDs are required for effect
- * attachment; a media session package name alone is not an audio session ID.
+ * Foreground coordinator for session-attached effects, DVC headroom management,
+ * best-effort playback discovery and media-player notifications.
  */
 class AudioInterceptorService : Service() {
     private val audioSessionPackages = ConcurrentHashMap<Int, String>()
+    private val trackerSessionPackages = ConcurrentHashMap<Int, String>()
     private val activeMediaPackages = LinkedHashSet<String>()
 
     private var mediaReceiverRegistered = false
     private var dvcManager: DvcManager? = null
+    private var advancedTracker: AdvancedDumpTracker? = null
+    private var trackerDiagnostic = "Player discovery has not started"
     private var controllerListener: ((GlobalEqSnapshot) -> Unit)? = null
 
     private val mediaSessionsReceiver = object : BroadcastReceiver() {
@@ -39,7 +41,7 @@ class AudioInterceptorService : Service() {
                     packages.filter { it.isNotBlank() }.distinct().take(MAX_TRACKED_PACKAGES)
                 )
             }
-            GlobalEqController.updateActivePlayers(packages)
+            refreshDetectedPlayerPackages()
             refreshForegroundNotification()
         }
     }
@@ -63,6 +65,42 @@ class AudioInterceptorService : Service() {
         }
         controllerListener = listener
         GlobalEqController.addListener(listener)
+
+        advancedTracker = AdvancedDumpTracker(applicationContext) { snapshot ->
+            trackerDiagnostic = snapshot.diagnostic
+            val nextSessions = snapshot.sessions.associateBy { it.audioSessionId }
+
+            trackerSessionPackages.keys.toList().forEach { sessionId ->
+                if (sessionId !in nextSessions) {
+                    trackerSessionPackages.remove(sessionId)
+                    if (sessionId !in audioSessionPackages) {
+                        GlobalEqController.detachSession(sessionId)
+                    }
+                }
+            }
+
+            nextSessions.values.forEach { session ->
+                val previous = trackerSessionPackages.put(
+                    session.audioSessionId,
+                    session.packageName
+                )
+                if (previous != session.packageName &&
+                    audioSessionPackages[session.audioSessionId] != session.packageName
+                ) {
+                    val attachment = GlobalEqController.attachSession(
+                        session.audioSessionId,
+                        session.packageName
+                    )
+                    Log.d(
+                        TAG,
+                        "Fallback session ${session.audioSessionId} from ${session.packageName}: $attachment"
+                    )
+                }
+            }
+
+            refreshDetectedPlayerPackages(snapshot.activePackages)
+            refreshForegroundNotification()
+        }.also { it.start() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -95,6 +133,8 @@ class AudioInterceptorService : Service() {
     override fun onDestroy() {
         controllerListener?.let(GlobalEqController::removeListener)
         controllerListener = null
+        advancedTracker?.stop()
+        advancedTracker = null
         dvcManager?.stop()
         dvcManager = null
 
@@ -103,6 +143,12 @@ class AudioInterceptorService : Service() {
             mediaReceiverRegistered = false
         }
 
+        trackerSessionPackages.keys.forEach { sessionId ->
+            if (sessionId !in audioSessionPackages) {
+                GlobalEqController.detachSession(sessionId)
+            }
+        }
+        trackerSessionPackages.clear()
         GlobalEqController.detachAllSessions()
         GlobalEqController.shutdown()
         super.onDestroy()
@@ -119,6 +165,7 @@ class AudioInterceptorService : Service() {
         audioSessionPackages[sessionId] = clientPackage
         val attachment = GlobalEqController.attachSession(sessionId, clientPackage)
         Log.i(TAG, "Session $sessionId from $clientPackage; attachment=$attachment")
+        refreshDetectedPlayerPackages()
     }
 
     private fun unregisterAudioSession(intent: Intent) {
@@ -127,12 +174,26 @@ class AudioInterceptorService : Service() {
         if (sessionId < 0) return
 
         val previousPackage = audioSessionPackages.remove(sessionId)
-        GlobalEqController.detachSession(sessionId)
+        if (sessionId !in trackerSessionPackages) {
+            GlobalEqController.detachSession(sessionId)
+        }
         Log.i(
             TAG,
             "Closed session $sessionId from " +
                 clientPackage.ifBlank { previousPackage.orEmpty() }
         )
+        refreshDetectedPlayerPackages()
+    }
+
+    private fun refreshDetectedPlayerPackages(extraPackages: List<String> = emptyList()) {
+        val mediaPackages = synchronized(activeMediaPackages) { activeMediaPackages.toList() }
+        val allPackages = (
+            mediaPackages +
+                audioSessionPackages.values +
+                trackerSessionPackages.values +
+                extraPackages
+            ).filter { it.isNotBlank() }.distinct().take(MAX_TRACKED_PACKAGES)
+        GlobalEqController.updateActivePlayers(allPackages)
     }
 
     private fun registerMediaSessionsReceiver() {
@@ -167,13 +228,16 @@ class AudioInterceptorService : Service() {
     private fun activePlayerSummary(): String {
         val packages = synchronized(activeMediaPackages) { activeMediaPackages.toList() }
         if (packages.isNotEmpty()) return packages.joinToString(", ")
-        return audioSessionPackages.values.distinct().firstOrNull()
+        return (audioSessionPackages.values + trackerSessionPackages.values)
+            .distinct()
+            .firstOrNull()
             ?: "No active media player detected"
     }
 
     private fun buildNotification(): Notification {
         val playerSummary = activePlayerSummary()
-        val sessionCount = audioSessionPackages.size
+        val allSessions = audioSessionPackages.keys + trackerSessionPackages.keys
+        val sessionCount = allSessions.distinct().size
         val dvc = dvcManager?.snapshot()
         val dvcText = when {
             dvc == null -> "DVC unavailable"
@@ -198,7 +262,7 @@ class AudioInterceptorService : Service() {
             .setContentText(dvcText)
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("$playerSummary · $sessionText · $dvcText · $attachmentSummary")
+                    .bigText("$playerSummary · $sessionText · $dvcText · $attachmentSummary · $trackerDiagnostic")
             )
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)

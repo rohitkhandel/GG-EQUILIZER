@@ -27,6 +27,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rohitkhandel.ggequalizer.ui.components.FrequencyResponseCanvas
 import com.rohitkhandel.ggequalizer.ui.components.RotaryKnob
+import com.rohitkhandel.ggequalizer.ui.components.PermissionSetupSheet
 import java.util.Locale
 import kotlin.math.log10
 
@@ -56,6 +60,7 @@ fun MainEqualizerScreen(
     viewModel: EqViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showPermissionSheet by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -65,6 +70,20 @@ fun MainEqualizerScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { showPermissionSheet = true }) {
+                Text("AUDIO PERMISSIONS", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        if (showPermissionSheet) {
+            PermissionSetupSheet(onDismiss = { showPermissionSheet = false })
+        }
+
         HeaderPanel(
             playerName = state.activePlayerName,
             packageName = state.activePlayerPackage,
