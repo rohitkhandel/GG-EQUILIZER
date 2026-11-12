@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
 import java.util.concurrent.CopyOnWriteArraySet
+import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.sqrt
 
