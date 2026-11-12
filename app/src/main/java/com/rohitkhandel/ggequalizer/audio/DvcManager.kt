@@ -178,6 +178,14 @@ class DvcManager(context: Context) {
         }
 
         fun globalSnapshot(): DvcSnapshot? = activeInstance?.snapshot()
+
+        fun addGlobalListener(listener: (DvcSnapshot) -> Unit) {
+            activeInstance?.addListener(listener)
+        }
+
+        fun removeGlobalListener(listener: (DvcSnapshot) -> Unit) {
+            activeInstance?.removeListener(listener)
+        }
     }
 }
 
