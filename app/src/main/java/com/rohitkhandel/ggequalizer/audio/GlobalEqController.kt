@@ -553,7 +553,9 @@ object GlobalEqController {
                 index,
                 DynamicsProcessing.EqBand(
                     profile.enabled,
-                    centerFrequencyHz,
+                    // Android expects each band's upper boundary, not its centre.
+                    // The target gain is still sampled at the geometric band centre.
+                    upperEdgeHz,
                     appliedGainDb
                 )
             )
