@@ -9,14 +9,11 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -111,7 +108,6 @@ fun MainEqualizerScreen(
     }
     var page by rememberSaveable { mutableStateOf(ConsolePage.EQUALIZER) }
     var showPermissionHelper by rememberSaveable { mutableStateOf(false) }
-    var appEntered by rememberSaveable { mutableStateOf(false) }
     val accent = accentFor(state.accentKey)
 
     LaunchedEffect(Unit) {
@@ -119,7 +115,6 @@ fun MainEqualizerScreen(
         preferences.getString("equalizer_value_mode", null)?.let(viewModel::setEqualizerValueMode)
         preferences.getString("tone_value_mode", null)?.let(viewModel::setToneValueMode)
         viewModel.setActivePlayerTracking(preferences.getBoolean("advanced_player_tracking", true))
-        appEntered = true
     }
 
     val importLauncher = rememberLauncherForActivityResult(
@@ -170,11 +165,6 @@ fun MainEqualizerScreen(
         if (uri != null) viewModel.importPresetBackup(context, uri)
     }
 
-    AnimatedVisibility(
-        visible = appEntered,
-        modifier = Modifier.fillMaxSize(),
-        enter = fadeIn(tween(420)) + slideInVertically(initialOffsetY = { it / 12 }, animationSpec = tween(420)) + scaleIn(initialScale = 0.97f, animationSpec = tween(420))
-    ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = Carbon,
@@ -288,7 +278,6 @@ fun MainEqualizerScreen(
                 )
             }
         }
-    }
     }
 
     if (showPermissionHelper) {
