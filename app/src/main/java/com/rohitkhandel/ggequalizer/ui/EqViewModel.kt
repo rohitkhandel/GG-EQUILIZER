@@ -2,6 +2,7 @@ package com.rohitkhandel.ggequalizer.ui
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
@@ -37,6 +38,20 @@ import kotlin.math.pow
 
 /** Coordinates UI-local gestures, throttled DSP profile writes, presets and spectrum capture. */
 class EqViewModel(application: Application) : AndroidViewModel(application) {
+    private val knownPlayerPackages = listOf(
+        "com.spotify.music",
+        "com.google.android.apps.youtube.music",
+        "com.google.android.youtube",
+        "org.videolan.vlc",
+        "com.maxmpz.audioplayer",
+        "in.krosbits.musicolet",
+        "com.amazon.mp3",
+        "com.jio.media.jiobeats",
+        "com.bsbportal.music",
+        "com.pubg.imobile",
+        "com.tencent.ig"
+    )
+
     private companion object {
         const val AUDIO_UPDATE_INTERVAL_MS = 20L
         const val RESPONSE_UPDATE_INTERVAL_MS = 24L
@@ -86,6 +101,13 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         GlobalEqController.addListener(globalListener)
         DvcManager.addGlobalListener(dvcListener)
         DvcManager.globalSnapshot()?.let(dvcListener)
+        mutableState.update { current ->
+            current.copy(
+                knownPlayerStates = knownPlayerPackages.associateWith(
+                    GlobalEqController::isKnownPlayerEnabled
+                )
+            )
+        }
 
         scope.launch {
             presetDao.observeAll().collect { presets ->
@@ -246,6 +268,11 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setDvcEnabled(enabled: Boolean) {
         mutableState.update { it.copy(dvcEnabled = enabled) }
+        getApplication<Application>()
+            .getSharedPreferences(AudioInterceptorService.UI_PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(AudioInterceptorService.PREF_DVC_ENABLED, enabled)
+            .apply()
         scope.launch(Dispatchers.Default) {
             DvcManager.setGlobalEnabled(enabled)
             DvcManager.globalSnapshot()?.let { snapshot ->
@@ -284,6 +311,47 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setActivePlayerTracking(enabled: Boolean) {
         mutableState.update { it.copy(activePlayerTracking = enabled) }
+        getApplication<Application>()
+            .getSharedPreferences(AudioInterceptorService.UI_PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(AudioInterceptorService.PREF_ADVANCED_TRACKING, enabled)
+            .apply()
+        val context = getApplication<Application>()
+        runCatching {
+            context.startForegroundService(
+                Intent(context, AudioInterceptorService::class.java)
+                    .setAction(AudioInterceptorService.ACTION_SET_ADVANCED_TRACKING)
+                    .putExtra(AudioInterceptorService.EXTRA_ADVANCED_TRACKING, enabled)
+            )
+        }
+    }
+
+    fun isKnownPlayerEnabled(packageName: String): Boolean =
+        mutableState.value.knownPlayerStates[packageName]
+            ?: GlobalEqController.isKnownPlayerEnabled(packageName)
+
+    fun setKnownPlayerEnabled(packageName: String, enabled: Boolean) {
+        GlobalEqController.setKnownPlayerEnabled(packageName, enabled)
+        mutableState.update { current ->
+            current.copy(knownPlayerStates = current.knownPlayerStates + (packageName to enabled))
+        }
+        val context = getApplication<Application>()
+        runCatching {
+            context.startForegroundService(
+                Intent(context, AudioInterceptorService::class.java)
+                    .setAction(AudioInterceptorService.ACTION_REFRESH_KNOWN_PLAYERS)
+            )
+        }
+    }
+
+    fun setEqualizerValueMode(mode: String) {
+        val safe = mode.uppercase().takeIf { it in setOf("HIDDEN", "DB", "PERCENT") } ?: "DB"
+        mutableState.update { it.copy(equalizerValueMode = safe) }
+    }
+
+    fun setToneValueMode(mode: String) {
+        val safe = mode.uppercase().takeIf { it in setOf("DB", "PERCENT") } ?: "PERCENT"
+        mutableState.update { it.copy(toneValueMode = safe) }
     }
 
     fun setVisualizerStyle(style: String) {

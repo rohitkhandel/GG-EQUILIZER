@@ -104,7 +104,9 @@ class AudioInterceptorService : Service() {
         val dvc = DvcManager(applicationContext)
         dvcManager = dvc
         dvc.start()
-        dvc.setEnabled(DEFAULT_DVC_ENABLED)
+        val savedDvcEnabled = getSharedPreferences(UI_PREFERENCES_NAME, MODE_PRIVATE)
+            .getBoolean(PREF_DVC_ENABLED, DEFAULT_DVC_ENABLED)
+        dvc.setEnabled(savedDvcEnabled)
         dvc.updateProfile(GlobalEqController.currentProfile())
 
         val listener: (GlobalEqSnapshot) -> Unit = {
@@ -114,48 +116,13 @@ class AudioInterceptorService : Service() {
         controllerListener = listener
         GlobalEqController.addListener(listener)
 
-        advancedTracker = AdvancedDumpTracker(applicationContext) { snapshot ->
-            sessionExecutor.execute {
-                trackerDiagnostic = snapshot.diagnostic
-                val nextSessions = snapshot.sessions.associateBy { it.audioSessionId }
-
-                trackerSessionPackages.keys.toList().forEach { sessionId ->
-                    if (!nextSessions.containsKey(sessionId)) {
-                        trackerSessionPackages.remove(sessionId)
-                        if (!audioSessionPackages.containsKey(sessionId)) {
-                            GlobalEqController.detachSession(sessionId)
-                        }
-                    }
-                }
-
-                nextSessions.values.forEach { session ->
-                    val previous = trackerSessionPackages.put(
-                        session.audioSessionId,
-                        session.packageName
-                    )
-                    if (previous != session.packageName &&
-                        audioSessionPackages[session.audioSessionId] != session.packageName
-                    ) {
-                        val attachment = GlobalEqController.attachSession(
-                            session.audioSessionId,
-                            session.packageName
-                        )
-                        Log.d(
-                            TAG,
-                            "Fallback session ${session.audioSessionId} from ${session.packageName}: $attachment"
-                        )
-                    }
-                }
-
-                refreshDetectedPlayerPackages(snapshot.activePackages)
-                mainHandler.post { refreshForegroundNotification() }
-            }
-        }.also { tracker ->
-            tracker.start()
-            registerAudioPlaybackCallback()
+        val trackingEnabled = getSharedPreferences(UI_PREFERENCES_NAME, MODE_PRIVATE)
+            .getBoolean(PREF_ADVANCED_TRACKING, true)
+        if (trackingEnabled) {
+            startAdvancedTracking()
+        } else {
+            trackerDiagnostic = "Advanced player tracking is disabled"
             queryActiveMediaSessions()
-            // Pull active playback configurations immediately; do not wait for the 5 s polling interval.
-            tracker.refreshNow()
         }
     }
 
@@ -174,10 +141,98 @@ class AudioInterceptorService : Service() {
             ACTION_SET_MASTER_ENABLED -> sessionExecutor.execute {
                 GlobalEqController.setMasterEnabled(intent.getBooleanExtra(EXTRA_MASTER_ENABLED, true))
             }
+            ACTION_SET_ADVANCED_TRACKING -> sessionExecutor.execute {
+                setAdvancedTracking(intent.getBooleanExtra(EXTRA_ADVANCED_TRACKING, true))
+            }
+            ACTION_REFRESH_KNOWN_PLAYERS -> sessionExecutor.execute {
+                refreshKnownPlayerSessions()
+            }
             else -> Log.d(TAG, "Interceptor started without a session event")
         }
         refreshForegroundNotification()
         return START_STICKY
+    }
+
+    private fun startAdvancedTracking() {
+        if (advancedTracker != null) return
+        trackerDiagnostic = "Advanced player tracking is starting"
+        advancedTracker = AdvancedDumpTracker(applicationContext) { snapshot ->
+            sessionExecutor.execute {
+                trackerDiagnostic = snapshot.diagnostic
+                val nextSessions = snapshot.sessions.associateBy { it.audioSessionId }
+
+                trackerSessionPackages.keys.toList().forEach { sessionId ->
+                    if (!nextSessions.containsKey(sessionId)) {
+                        trackerSessionPackages.remove(sessionId)
+                        if (!audioSessionPackages.containsKey(sessionId)) {
+                            GlobalEqController.detachSession(sessionId)
+                        }
+                    }
+                }
+
+                nextSessions.values.forEach { session ->
+                    val previous = trackerSessionPackages.put(session.audioSessionId, session.packageName)
+                    if (previous != session.packageName &&
+                        audioSessionPackages[session.audioSessionId] != session.packageName
+                    ) {
+                        val attachment = GlobalEqController.attachSession(
+                            session.audioSessionId,
+                            session.packageName
+                        )
+                        Log.d(TAG, "Tracked session \${session.audioSessionId} from \${session.packageName}: $attachment")
+                    }
+                }
+
+                refreshDetectedPlayerPackages(snapshot.activePackages)
+                mainHandler.post { refreshForegroundNotification() }
+            }
+        }.also { tracker ->
+            tracker.start()
+            registerAudioPlaybackCallback()
+            queryActiveMediaSessions()
+            tracker.refreshNow()
+        }
+    }
+
+    private fun stopAdvancedTracking() {
+        advancedTracker?.stop()
+        advancedTracker = null
+        if (playbackCallbackRegistered) {
+            runCatching { audioManager?.unregisterAudioPlaybackCallback(audioPlaybackCallback) }
+            playbackCallbackRegistered = false
+        }
+        audioManager = null
+        trackerSessionPackages.keys.toList().forEach { sessionId ->
+            trackerSessionPackages.remove(sessionId)
+            if (!audioSessionPackages.containsKey(sessionId)) {
+                GlobalEqController.detachSession(sessionId)
+            }
+        }
+        trackerDiagnostic = "Advanced player tracking is disabled"
+        refreshDetectedPlayerPackages()
+    }
+
+    private fun setAdvancedTracking(enabled: Boolean) {
+        getSharedPreferences(UI_PREFERENCES_NAME, MODE_PRIVATE).edit()
+            .putBoolean(PREF_ADVANCED_TRACKING, enabled)
+            .apply()
+        if (enabled) startAdvancedTracking() else stopAdvancedTracking()
+        refreshForegroundNotification()
+    }
+
+    private fun refreshKnownPlayerSessions() {
+        val sessions = LinkedHashMap<Int, String>()
+        sessions.putAll(audioSessionPackages)
+        sessions.putAll(trackerSessionPackages)
+        sessions.forEach { (sessionId, packageName) ->
+            if (GlobalEqController.isKnownPlayerEnabled(packageName)) {
+                GlobalEqController.attachSession(sessionId, packageName)
+            } else {
+                GlobalEqController.detachSession(sessionId)
+            }
+        }
+        refreshDetectedPlayerPackages()
+        refreshForegroundNotification()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -467,6 +522,15 @@ class AudioInterceptorService : Service() {
         const val EXTRA_ACTIVE_MEDIA_PACKAGES = "extra_active_media_packages"
         const val EXTRA_DVC_ENABLED = "extra_dvc_enabled"
         const val EXTRA_MASTER_ENABLED = "extra_master_enabled"
+        const val EXTRA_ADVANCED_TRACKING = "extra_advanced_tracking"
+        const val ACTION_SET_ADVANCED_TRACKING =
+            "com.rohitkhandel.ggequalizer.action.SET_ADVANCED_TRACKING"
+        const val ACTION_REFRESH_KNOWN_PLAYERS =
+            "com.rohitkhandel.ggequalizer.action.REFRESH_KNOWN_PLAYERS"
+
+        const val UI_PREFERENCES_NAME = "gg_equalizer_ui_preferences"
+        const val PREF_ADVANCED_TRACKING = "advanced_player_tracking"
+        const val PREF_DVC_ENABLED = "dvc_enabled"
 
         private const val TAG = "AudioInterceptor"
         private const val NOTIFICATION_ID = 4101

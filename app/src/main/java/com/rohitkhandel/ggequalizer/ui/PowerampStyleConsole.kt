@@ -276,7 +276,8 @@ private fun StudioBandWorkspace(state: EqUiState, viewModel: EqViewModel, accent
         ) {
             Text("PRE", color = StudioMuted, fontSize = 7.sp, fontWeight = FontWeight.Black)
             StudioGainFader(
-                value = state.preampGainDb, label = "PREAMP", accent = StudioBlue, selected = false,
+                value = state.preampGainDb, valueRange = -24f..12f, valueMode = state.equalizerValueMode,
+                label = "PREAMP", accent = StudioBlue, selected = false,
                 compact = false, modifier = Modifier.weight(1f).fillMaxWidth(), fillFromTop = true,
                 onValueChange = viewModel::setPreampGain
             )
@@ -345,9 +346,9 @@ private fun StudioBandPanel(
         }
         Row(Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             StudioGainFader(
-                value = band.gainDb, valueRange = -15f..15f, label = "GAIN", accent = StudioRed,
-                selected = selected, compact = false, modifier = Modifier.width(53.dp).fillMaxHeight(),
-                onTouchStart = onSelect, onValueChange = onGain
+                value = band.gainDb, valueRange = -15f..15f, valueMode = state.equalizerValueMode,
+                label = "GAIN", accent = StudioRed, selected = selected, compact = false,
+                modifier = Modifier.width(53.dp).fillMaxHeight(), onTouchStart = onSelect, onValueChange = onGain
             )
             Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -497,6 +498,7 @@ private fun StudioPlayerBadge(state: EqUiState) {
 private fun StudioGainFader(
     value: Float,
     valueRange: ClosedFloatingPointRange<Float> = -12f..12f,
+    valueMode: String = "DB",
     label: String,
     accent: Color,
     selected: Boolean,
@@ -514,7 +516,17 @@ private fun StudioGainFader(
     val max = valueRange.endInclusive
     val range = (max - min).coerceAtLeast(0.001f)
     Column(modifier.padding(horizontal = if (compact) 0.dp else 1.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(String.format(Locale.US, "%+.1f", local.floatValue), color = if (selected) accent else StudioText, fontSize = if (compact) 6.sp else 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        if (valueMode != "HIDDEN") {
+            Text(
+                studioGainValueText(local.floatValue, valueRange, valueMode),
+                color = if (selected) accent else StudioText,
+                fontSize = if (compact) 6.sp else 8.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        } else {
+            Spacer(Modifier.height(if (compact) 8.dp else 10.dp))
+        }
         Canvas(
             Modifier.weight(1f).fillMaxWidth()
                 .pointerInput(Unit) {
@@ -611,15 +623,29 @@ private fun StudioBassTrebleRow(state: EqUiState, viewModel: EqViewModel) {
     Row(Modifier.fillMaxWidth().height(139.dp).padding(horizontal = 8.dp, vertical = 2.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         RotaryKnob(
             label = "BASS", value = ((state.bassGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f, defaultValue = 0.5f,
-            valueText = "${((state.bassGainDb + 12f) / 24f * 200f).toInt()}%", onValueChange = { viewModel.setBassGain(it * 24f - 12f) },
+            valueText = studioToneValueText(state.bassGainDb, state.toneValueMode), onValueChange = { viewModel.setBassGain(it * 24f - 12f) },
             accent = StudioRed, knobSize = 108.dp, modifier = Modifier.weight(1f)
         )
         RotaryKnob(
             label = "TREBLE", value = ((state.trebleGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f, defaultValue = 0.5f,
-            valueText = "${((state.trebleGainDb + 12f) / 24f * 200f).toInt()}%", onValueChange = { viewModel.setTrebleGain(it * 24f - 12f) },
+            valueText = studioToneValueText(state.trebleGainDb, state.toneValueMode), onValueChange = { viewModel.setTrebleGain(it * 24f - 12f) },
             accent = StudioRed, knobSize = 108.dp, modifier = Modifier.weight(1f)
         )
     }
+}
+
+private fun studioGainValueText(
+    value: Float,
+    mode: String
+): String = when (mode) {
+    "PERCENT" -> String.format(Locale.US, "%.0f%%", 100.0 * 10.0.pow(value.toDouble() / 20.0))
+    else -> String.format(Locale.US, "%+.1f", value)
+}
+
+private fun studioToneValueText(valueDb: Float, mode: String): String = when (mode) {
+    "DB" -> String.format(Locale.US, "%+.1f dB", valueDb)
+    "HIDDEN" -> ""
+    else -> String.format(Locale.US, "%.0f%%", 100.0 * 10.0.pow(valueDb.toDouble() / 20.0))
 }
 
 private fun studioFilterShort(type: Int): String = when (type) {
@@ -640,12 +666,12 @@ fun StudioTonePage(state: EqUiState, viewModel: EqViewModel, accent: Color) {
         Row(Modifier.fillMaxWidth().weight(0.43f), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             RotaryKnob(
                 label = "BASS", value = ((state.bassGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f, defaultValue = 0.5f,
-                valueText = String.format(Locale.US, "%+.1f dB", state.bassGainDb), onValueChange = { viewModel.setBassGain(it * 24f - 12f) },
+                valueText = studioToneValueText(state.bassGainDb, state.toneValueMode), onValueChange = { viewModel.setBassGain(it * 24f - 12f) },
                 accent = StudioRed, knobSize = 128.dp, modifier = Modifier.weight(1f)
             )
             RotaryKnob(
                 label = "TREBLE", value = ((state.trebleGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f, defaultValue = 0.5f,
-                valueText = String.format(Locale.US, "%+.1f dB", state.trebleGainDb), onValueChange = { viewModel.setTrebleGain(it * 24f - 12f) },
+                valueText = studioToneValueText(state.trebleGainDb, state.toneValueMode), onValueChange = { viewModel.setTrebleGain(it * 24f - 12f) },
                 accent = StudioBlue, knobSize = 128.dp, modifier = Modifier.weight(1f)
             )
         }

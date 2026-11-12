@@ -11,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -110,6 +112,9 @@ fun MainEqualizerScreen(
 
     LaunchedEffect(Unit) {
         preferences.getString("console_accent", null)?.let(viewModel::setAccentKey)
+        preferences.getString("equalizer_value_mode", null)?.let(viewModel::setEqualizerValueMode)
+        preferences.getString("tone_value_mode", null)?.let(viewModel::setToneValueMode)
+        viewModel.setActivePlayerTracking(preferences.getBoolean("advanced_player_tracking", true))
     }
 
     val importLauncher = rememberLauncherForActivityResult(
@@ -177,7 +182,10 @@ fun MainEqualizerScreen(
                 .fillMaxSize()
                 .padding(inset)
                 .background(Carbon),
-            transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(100)) },
+            transitionSpec = {
+                (slideInHorizontally(initialOffsetX = { it / 9 }, animationSpec = tween(230)) + fadeIn(tween(190))) togetherWith
+                    (slideOutHorizontally(targetOffsetX = { -it / 12 }, animationSpec = tween(190)) + fadeOut(tween(160)))
+            },
             label = "console page swap"
         ) { destination ->
             when (destination) {
@@ -213,10 +221,10 @@ fun MainEqualizerScreen(
                     onBackup = { backupLauncher.launch("GG Equalizer backup.json") },
                     onRestore = { restoreLauncher.launch(arrayOf("application/json", "text/plain")) }
                 )
-                ConsolePage.SETTINGS -> ConsoleSettings(
+                ConsolePage.SETTINGS -> SettingsHub(
                     state = state,
                     accent = accent,
-                    context = context,
+                    onMasterEnabled = viewModel::setMasterEnabled,
                     onAccent = { key ->
                         viewModel.setAccentKey(key)
                         preferences.edit().putString("console_accent", key).apply()
@@ -224,16 +232,49 @@ fun MainEqualizerScreen(
                     onBandCount = viewModel::setBandCount,
                     onShowCurve = viewModel::setShowCurveOnSliders,
                     onVisualizerStyle = viewModel::setVisualizerStyle,
+                    onVisualizerRefreshRate = viewModel::setVisualizerRefreshRate,
                     onSmooth = viewModel::setSmoothGains,
                     onOverlapEnabled = viewModel::setBandsOverlapEnabled,
                     onOverlapPercent = viewModel::setBandsOverlapPercent,
                     onAvoidOverloading = viewModel::setAvoidOverloading,
-                    onLimiter = viewModel::setLimiterEnabled,
+                    onLimiterEnabled = viewModel::setLimiterEnabled,
+                    onLimiterThreshold = viewModel::setLimiterThreshold,
+                    onLimiterRelease = viewModel::setLimiterRelease,
                     onDvc = viewModel::setDvcEnabled,
-                    onDvcMode = viewModel::setDvcMode,
-                    onBlockSize = viewModel::setAudioBlockSize,
                     onTracking = viewModel::setActivePlayerTracking,
-                    onOpenAccess = { showPermissionHelper = true }
+                    onKnownPlayerEnabled = viewModel::setKnownPlayerEnabled,
+                    onIsKnownPlayerEnabled = viewModel::isKnownPlayerEnabled,
+                    equalizerValueMode = state.equalizerValueMode,
+                    toneValueMode = state.toneValueMode,
+                    onEqualizerValueMode = {
+                        viewModel.setEqualizerValueMode(it)
+                        preferences.edit().putString("equalizer_value_mode", it).apply()
+                    },
+                    onToneValueMode = {
+                        viewModel.setToneValueMode(it)
+                        preferences.edit().putString("tone_value_mode", it).apply()
+                    },
+                    onBassFrequency = viewModel::setBassFrequency,
+                    onBassQ = viewModel::setBassQ,
+                    onTrebleFrequency = viewModel::setTrebleFrequency,
+                    onTrebleQ = viewModel::setTrebleQ,
+                    onOpenAccess = { showPermissionHelper = true },
+                    onCopyDiagnostics = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(
+                            ClipData.newPlainText(
+                                "GG Equalizer diagnostics",
+                                "adb shell dumpsys media_session\nadb shell dumpsys media.audio_flinger"
+                            )
+                        )
+                        Toast.makeText(context, "ADB diagnostics copied", Toast.LENGTH_SHORT).show()
+                    },
+                    onImport = {
+                        importLauncher.launch(arrayOf("text/plain", "application/json", "application/octet-stream"))
+                    },
+                    onExport = { exportLauncher.launch("GG Equalizer preset.json") },
+                    onBackup = { backupLauncher.launch("GG Equalizer backup.json") },
+                    onRestore = { restoreLauncher.launch(arrayOf("application/json", "text/plain")) }
                 )
             }
         }

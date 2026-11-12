@@ -20,7 +20,8 @@ object GlobalEqController {
     private const val SAMPLE_RATE_HZ = 48_000
     private const val CHANNEL_COUNT = 2
     private const val BAND_COUNT = NativeDspBridge.MAX_PARAMETRIC_BANDS
-    private const val LN_2 = 0.69314718056f
+    private const val KNOWN_PLAYER_PREFS = "gg_equalizer_known_players"
+    private const val DISABLED_PLAYERS_KEY = "disabled_packages"
 
     private data class SessionEffects(
         val sessionId: Int,
@@ -51,10 +52,17 @@ object GlobalEqController {
     private var activePlayerPackages: List<String> = emptyList()
     private var profile = EqAudioProfile.defaults()
     private var dvcCompensationDb = 0f
+    private val disabledKnownPlayers = linkedSetOf<String>()
 
     fun initialize(context: Context) {
         synchronized(lock) {
             applicationContext = context.applicationContext
+            val savedDisabled = context.applicationContext
+                .getSharedPreferences(KNOWN_PLAYER_PREFS, Context.MODE_PRIVATE)
+                .getStringSet(DISABLED_PLAYERS_KEY, emptySet())
+                .orEmpty()
+            disabledKnownPlayers.clear()
+            disabledKnownPlayers.addAll(savedDisabled)
             ensureNativeEngineLocked()
             applyProfileToAllSessionsLocked()
         }
@@ -87,9 +95,35 @@ object GlobalEqController {
         publishSnapshot()
     }
 
+    fun isKnownPlayerEnabled(packageName: String): Boolean = synchronized(lock) {
+        packageName !in disabledKnownPlayers
+    }
+
+    fun setKnownPlayerEnabled(packageName: String, enabled: Boolean) {
+        if (packageName.isBlank()) return
+        synchronized(lock) {
+            if (enabled) disabledKnownPlayers.remove(packageName)
+            else disabledKnownPlayers.add(packageName)
+            applicationContext?.getSharedPreferences(KNOWN_PLAYER_PREFS, Context.MODE_PRIVATE)
+                ?.edit()
+                ?.putStringSet(DISABLED_PLAYERS_KEY, disabledKnownPlayers.toSet())
+                ?.apply()
+
+            if (!enabled) {
+                val matching = sessions.filterValues { it.packageName == packageName }.keys.toList()
+                matching.forEach { sessionId -> sessions.remove(sessionId)?.release() }
+            }
+        }
+        publishSnapshot()
+    }
+
     fun attachSession(sessionId: Int, packageName: String): String {
         if (sessionId < 0 || packageName.isBlank()) return "invalid"
         val attachment = synchronized(lock) {
+            if (packageName in disabledKnownPlayers) {
+                sessions.remove(sessionId)?.release()
+                return@synchronized "disabled in Known Players"
+            }
             sessions[sessionId]?.let { current ->
                 if (current.packageName == packageName) return@synchronized current.attachment
                 current.release()

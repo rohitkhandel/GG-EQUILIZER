@@ -76,6 +76,9 @@ data class EqUiState(
     val dvcMode: String = "SMART",
     val audioBlockSize: Int = 4096,
     val activePlayerTracking: Boolean = true,
+    val equalizerValueMode: String = "DB",
+    val toneValueMode: String = "PERCENT",
+    val knownPlayerStates: Map<String, Boolean> = emptyMap(),
     val presets: List<PresetEntity> = emptyList(),
     val selectedPresetId: String? = null,
     val presetMessage: String? = null
