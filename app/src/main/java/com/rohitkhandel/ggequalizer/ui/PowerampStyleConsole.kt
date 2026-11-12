@@ -336,7 +336,7 @@ private fun StudioBandWorkspace(state: EqUiState, viewModel: EqViewModel, accent
         LazyRow(
             state = scroll,
             modifier = Modifier.weight(1f).fillMaxHeight(),
-            horizontalArrangement = Arrangement.spacedBy(if (parametricMode) 7.dp else 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (parametricMode) 7.dp else 1.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             itemsIndexed(visibleBands, key = { _, item -> item.index }) { _, item ->
@@ -364,7 +364,7 @@ private fun StudioBandWorkspace(state: EqUiState, viewModel: EqViewModel, accent
                             band = band,
                             selected = item.index == state.selectedBandIndex,
                             valueMode = state.equalizerValueMode,
-                            width = if (state.bandCount == 15) 27.dp else 34.dp,
+                            width = if (state.bandCount == 15) 23.dp else 30.dp,
                             accent = accent,
                             onSelect = { viewModel.selectBand(item.index) },
                             onGain = { viewModel.setBandGain(item.index, it) },

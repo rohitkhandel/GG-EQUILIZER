@@ -148,20 +148,22 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update { it.copy(selectedBandIndex = index) }
     }
 
+    // Editing a disabled graphic slot should activate it, matching a hardware EQ fader.
+    // Parametric filters are already added/enabled explicitly by the Add Band action.
     fun setBandGain(index: Int, gainDb: Float) {
-        updateBand(index) { it.copy(gainDb = gainDb.coerceIn(-15f, 15f)) }
+        updateBand(index) { it.copy(gainDb = gainDb.coerceIn(-15f, 15f), enabled = true) }
     }
 
     fun setBandFrequency(index: Int, frequencyHz: Float) {
-        updateBand(index) { it.copy(frequencyHz = frequencyHz.coerceIn(20f, 20_000f)) }
+        updateBand(index) { it.copy(frequencyHz = frequencyHz.coerceIn(20f, 20_000f), enabled = true) }
     }
 
     fun setBandQ(index: Int, qFactor: Float) {
-        updateBand(index) { it.copy(qFactor = qFactor.coerceIn(0.1f, 12f)) }
+        updateBand(index) { it.copy(qFactor = qFactor.coerceIn(0.1f, 12f), enabled = true) }
     }
 
     fun setBandFilterType(index: Int, filterType: Int) {
-        updateBand(index) { it.copy(filterType = filterType.coerceIn(0, 2)) }
+        updateBand(index) { it.copy(filterType = filterType.coerceIn(0, 2), enabled = true) }
     }
 
     fun setBandEnabled(index: Int, enabled: Boolean) {
