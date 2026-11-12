@@ -113,7 +113,7 @@ object GlobalEqController {
             ensureNativeEngineLocked()
             val effects = SessionEffects(sessionId, packageName)
             if (profile.enabled) {
-                if (!attachDynamicsLocked(effects)) attachFallbackEffectsLocked(effects)
+                if (!attachDynamicsLocked(effects)) applyFallbackEffectsLocked(effects)
                 applyProfileLocked(effects)
             }
             effects.attachment = when {
@@ -152,7 +152,7 @@ object GlobalEqController {
                     if (effects.dynamics == null && effects.equalizer == null &&
                         effects.bassBoost == null && effects.loudnessEnhancer == null
                     ) {
-                        if (!attachDynamicsLocked(effects)) attachFallbackEffectsLocked(effects)
+                        if (!attachDynamicsLocked(effects)) applyFallbackEffectsLocked(effects)
                     }
                     applyProfileLocked(effects)
                     effects.setEnabled(true)
