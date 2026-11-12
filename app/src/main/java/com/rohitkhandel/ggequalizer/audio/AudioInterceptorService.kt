@@ -33,7 +33,9 @@ class AudioInterceptorService : Service() {
             val packages = intent.getStringArrayListExtra(EXTRA_ACTIVE_MEDIA_PACKAGES).orEmpty()
             synchronized(activeMediaPackages) {
                 activeMediaPackages.clear()
-                activeMediaPackages.addAll(packages.filter { it.isNotBlank() }.take(MAX_TRACKED_PACKAGES))
+                activeMediaPackages.addAll(
+                    packages.filter { it.isNotBlank() }.take(MAX_TRACKED_PACKAGES)
+                )
             }
             refreshForegroundNotification()
         }
@@ -43,12 +45,16 @@ class AudioInterceptorService : Service() {
         super.onCreate()
         createNotificationChannel()
         registerMediaSessionsReceiver()
-
         startForeground(NOTIFICATION_ID, buildNotification())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        if (intent == null) {
+            refreshForegroundNotification()
+            return START_STICKY
+        }
+
+        when (intent.action) {
             ACTION_AUDIO_SESSION_OPEN -> registerAudioSession(intent)
             ACTION_AUDIO_SESSION_CLOSE -> unregisterAudioSession(intent)
             else -> Log.d(TAG, "Interceptor started without a session event")
