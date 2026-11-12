@@ -133,7 +133,7 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setBandQ(index: Int, qFactor: Float) {
-        updateBand(index) { it.copy(qFactor = qFactor.coerceIn(0.1f, 10f)) }
+        updateBand(index) { it.copy(qFactor = qFactor.coerceIn(0.1f, 12f)) }
     }
 
     fun setBandFilterType(index: Int, filterType: Int) {
@@ -163,13 +163,13 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setBassGain(gainDb: Float) {
-        mutableState.update { it.copy(bassGainDb = gainDb.coerceIn(0f, 12f)) }
+        mutableState.update { it.copy(bassGainDb = gainDb.coerceIn(-12f, 12f)) }
         audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
 
     fun setTrebleGain(gainDb: Float) {
-        mutableState.update { it.copy(trebleGainDb = gainDb.coerceIn(0f, 12f)) }
+        mutableState.update { it.copy(trebleGainDb = gainDb.coerceIn(-12f, 12f)) }
         audioProfileUpdates.trySend(Unit)
         recalculateResponse()
     }
@@ -684,7 +684,7 @@ private object EqResponseCalculator {
                 ordered.forEachIndexed { bandIndex, band ->
                     if (!band.enabled) return@forEachIndexed
                     val sigma = (
-                        sigmaBase / band.qFactor.coerceIn(0.1f, 10f).coerceIn(0.55f, 1.8f) +
+                        sigmaBase / band.qFactor.coerceIn(0.1f, 12f).coerceIn(0.55f, 1.8f) +
                             coupling * 0.36f
                         ).coerceIn(0.09f, 0.62f)
                     val distance = ln((frequency / band.frequencyHz).coerceAtLeast(0.0001f)) / 0.69314718056f

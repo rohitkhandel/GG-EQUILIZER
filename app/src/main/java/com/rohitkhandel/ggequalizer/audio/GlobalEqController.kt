@@ -191,8 +191,8 @@ object GlobalEqController {
         if (!bassDb.isFinite() || !trebleDb.isFinite()) return
         synchronized(lock) {
             profile = profile.copy(
-                bassGainDb = bassDb.coerceIn(0f, 12f),
-                trebleGainDb = trebleDb.coerceIn(0f, 12f)
+                bassGainDb = bassDb.coerceIn(-12f, 12f),
+                trebleGainDb = trebleDb.coerceIn(-12f, 12f)
             )
             if (nativeHandle == 0L) ensureNativeEngineLocked()
             if (nativeHandle != 0L) {
@@ -384,7 +384,7 @@ object GlobalEqController {
         ordered.forEachIndexed { index, band ->
             if (!band.enabled) return@forEachIndexed
             val sigma = (
-                sigmaBase * (1f / band.qFactor.coerceIn(0.1f, 10f)).coerceIn(0.55f, 1.8f) +
+                sigmaBase * (1f / band.qFactor.coerceIn(0.1f, 12f)).coerceIn(0.55f, 1.8f) +
                     overlap * 0.36f
                 ).coerceIn(0.09f, 0.62f)
             var weight = gaussianWeight(frequencyHz, band.frequencyHz, sigma)
@@ -406,7 +406,7 @@ object GlobalEqController {
         val octaveDistance = ln((frequencyHz / profile.bassFrequencyHz).coerceAtLeast(0.0001f)) / LN_2
         val transition = (0.62f / profile.bassQFactor).coerceIn(0.30f, 1.30f)
         val weight = 1f / (1f + exp(octaveDistance / transition))
-        return (profile.bassGainDb / 12f * 16f * weight).coerceIn(0f, 16f)
+        return (profile.bassGainDb / 12f * 16f * weight).coerceIn(-16f, 16f)
     }
 
     /** Soft high-shelf response centred at the selected treble frequency. */
@@ -414,7 +414,7 @@ object GlobalEqController {
         val octaveDistance = ln((frequencyHz / profile.trebleFrequencyHz).coerceAtLeast(0.0001f)) / LN_2
         val transition = (0.62f / profile.trebleQFactor).coerceIn(0.30f, 1.30f)
         val weight = 1f / (1f + exp(-octaveDistance / transition))
-        return (profile.trebleGainDb / 12f * 12f * weight).coerceIn(0f, 12f)
+        return (profile.trebleGainDb / 12f * 12f * weight).coerceIn(-12f, 12f)
     }
 
     private fun effectivePreampDbLocked(): Float =
@@ -705,7 +705,7 @@ data class EqBandParameter(
     fun sanitized() = copy(
         frequencyHz = frequencyHz.takeIf(Float::isFinite)?.coerceIn(20f, 20_000f) ?: 1_000f,
         gainDb = gainDb.takeIf(Float::isFinite)?.coerceIn(-24f, 24f) ?: 0f,
-        qFactor = qFactor.takeIf(Float::isFinite)?.coerceIn(0.1f, 10f) ?: 1f,
+        qFactor = qFactor.takeIf(Float::isFinite)?.coerceIn(0.1f, 12f) ?: 1f,
         filterType = filterType.coerceIn(0, 2)
     )
 }
@@ -744,8 +744,8 @@ data class EqAudioProfile(
         return copy(
             bands = cleanBands + defaultEqBands().drop(cleanBands.size),
             preampGainDb = preampGainDb.takeIf(Float::isFinite)?.coerceIn(-24f, 12f) ?: 0f,
-            bassGainDb = bassGainDb.takeIf(Float::isFinite)?.coerceIn(0f, 12f) ?: 0f,
-            trebleGainDb = trebleGainDb.takeIf(Float::isFinite)?.coerceIn(0f, 12f) ?: 0f,
+            bassGainDb = bassGainDb.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f,
+            trebleGainDb = trebleGainDb.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f,
             bassFrequencyHz = bassFrequencyHz.takeIf(Float::isFinite)?.coerceIn(20f, 250f) ?: 85f,
             bassQFactor = bassQFactor.takeIf(Float::isFinite)?.coerceIn(0.5f, 2f) ?: 0.8f,
             trebleFrequencyHz = trebleFrequencyHz.takeIf(Float::isFinite)?.coerceIn(4_000f, 16_000f) ?: 10_000f,
