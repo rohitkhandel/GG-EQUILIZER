@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import com.rohitkhandel.ggequalizer.audio.DvcManager
 import com.rohitkhandel.ggequalizer.audio.DvcSnapshot
 import com.rohitkhandel.ggequalizer.audio.EqAudioProfile
+import com.rohitkhandel.ggequalizer.audio.EqResponseMath
 import com.rohitkhandel.ggequalizer.audio.EqBandParameter
 import com.rohitkhandel.ggequalizer.audio.FftAnalyzer
 import com.rohitkhandel.ggequalizer.audio.GlobalEqController
@@ -32,8 +33,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.exp
-import kotlin.math.ln
 import kotlin.math.pow
 
 /** Coordinates UI-local gestures, throttled DSP profile writes, presets and spectrum capture. */
@@ -669,50 +668,28 @@ private object EqResponseCalculator {
     fun calculate(state: EqUiState): List<FrequencyResponsePoint> {
         val sampleCount = 220
         val activeIndices = state.activeBandIndices()
-        val ordered = state.bands.withIndex()
-            .filter { it.index in activeIndices }
-            .map { it.value }
-            .sortedBy { it.frequencyHz }
-        val coupling = if (state.bandsOverlapEnabled) state.bandsOverlapPercent / 100f * 0.35f else 0f
+        val profile = EqAudioProfile(
+            enabled = state.masterEnabled,
+            bands = state.bands.mapIndexed { index, band ->
+                band.copy(enabled = band.enabled && index in activeIndices).toAudioParameter()
+            },
+            preampGainDb = state.preampGainDb,
+            bassGainDb = state.bassGainDb,
+            trebleGainDb = state.trebleGainDb,
+            bassFrequencyHz = state.bassFrequencyHz,
+            bassQFactor = state.bassQFactor,
+            trebleFrequencyHz = state.trebleFrequencyHz,
+            trebleQFactor = state.trebleQFactor
+        ).sanitized()
+
         return List(sampleCount) { index ->
             val t = index.toDouble() / (sampleCount - 1).toDouble()
-            val frequency = (20.0 * 1000.0.pow(t)).toFloat()
-            var gain = if (state.masterEnabled) state.preampGainDb else 0f
-
-            if (state.masterEnabled) {
-                val sigmaBase = if (state.smoothGains) 0.24f else 0.12f
-                ordered.forEachIndexed { bandIndex, band ->
-                    if (!band.enabled) return@forEachIndexed
-                    val sigma = (
-                        sigmaBase / band.qFactor.coerceIn(0.1f, 12f).coerceIn(0.55f, 1.8f) +
-                            coupling * 0.36f
-                        ).coerceIn(0.09f, 0.62f)
-                    val distance = ln((frequency / band.frequencyHz).coerceAtLeast(0.0001f)) / 0.69314718056f
-                    var weight = exp(-0.5f * (distance / sigma).pow(2))
-                    if (coupling > 0f) {
-                        ordered.getOrNull(bandIndex - 1)?.let { prev ->
-                            val prevD = ln((frequency / prev.frequencyHz).coerceAtLeast(0.0001f)) / 0.69314718056f
-                            weight += coupling * exp(-0.5f * (prevD / (sigma * 1.1f)).pow(2))
-                        }
-                        ordered.getOrNull(bandIndex + 1)?.let { next ->
-                            val nextD = ln((frequency / next.frequencyHz).coerceAtLeast(0.0001f)) / 0.69314718056f
-                            weight += coupling * exp(-0.5f * (nextD / (sigma * 1.1f)).pow(2))
-                        }
-                    }
-                    gain += band.gainDb * weight
-                }
-
-                val bassOctaves = ln((frequency / state.bassFrequencyHz).coerceAtLeast(0.0001f)) / 0.69314718056f
-                val bassSlope = (0.62f / state.bassQFactor).coerceIn(0.30f, 1.30f)
-                gain += state.bassGainDb / 12f * 16f /
-                    (1f + exp(bassOctaves / bassSlope))
-
-                val trebleOctaves = ln((frequency / state.trebleFrequencyHz).coerceAtLeast(0.0001f)) / 0.69314718056f
-                val trebleSlope = (0.62f / state.trebleQFactor).coerceIn(0.30f, 1.30f)
-                gain += state.trebleGainDb / 12f * 12f /
-                    (1f + exp(-trebleOctaves / trebleSlope))
+            val frequency = (20.0 * 1_000.0.pow(t)).toFloat()
+            val gain = if (state.masterEnabled) {
+                EqResponseMath.profileGainDb(profile, frequency, includePreamp = true)
+            } else {
+                0f
             }
-
             FrequencyResponsePoint(frequency, gain.coerceIn(-36f, 36f))
         }
     }

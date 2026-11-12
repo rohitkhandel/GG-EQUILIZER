@@ -1,17 +1,12 @@
 package com.rohitkhandel.ggequalizer.audio
 
 import android.content.Context
-import android.media.audiofx.BassBoost
 import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.Equalizer
-import android.media.audiofx.LoudnessEnhancer
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
 import java.util.concurrent.CopyOnWriteArraySet
-import kotlin.math.abs
-import kotlin.math.exp
-import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -25,7 +20,6 @@ object GlobalEqController {
     private const val SAMPLE_RATE_HZ = 48_000
     private const val CHANNEL_COUNT = 2
     private const val BAND_COUNT = NativeDspBridge.MAX_PARAMETRIC_BANDS
-    private const val MBC_BAND_COUNT = 3
     private const val LN_2 = 0.69314718056f
 
     private data class SessionEffects(
@@ -33,26 +27,18 @@ object GlobalEqController {
         val packageName: String,
         var dynamics: DynamicsProcessing? = null,
         var equalizer: Equalizer? = null,
-        var bassBoost: BassBoost? = null,
-        var loudnessEnhancer: LoudnessEnhancer? = null,
         var attachment: String = "unavailable"
     ) {
         fun release() {
             runCatching { dynamics?.release() }
             runCatching { equalizer?.release() }
-            runCatching { bassBoost?.release() }
-            runCatching { loudnessEnhancer?.release() }
             dynamics = null
             equalizer = null
-            bassBoost = null
-            loudnessEnhancer = null
         }
 
         fun setEnabled(enabled: Boolean) {
             runCatching { dynamics?.setEnabled(enabled) }
             runCatching { equalizer?.setEnabled(enabled) }
-            runCatching { bassBoost?.setEnabled(enabled) }
-            runCatching { loudnessEnhancer?.setEnabled(enabled) }
         }
     }
 
@@ -117,10 +103,8 @@ object GlobalEqController {
                 applyProfileLocked(effects)
             }
             effects.attachment = when {
-                effects.dynamics != null && effects.bassBoost != null -> "dynamics + hardware bass"
-                effects.dynamics != null -> "dynamics-processing"
-                effects.equalizer != null || effects.bassBoost != null ||
-                    effects.loudnessEnhancer != null -> "legacy session effects"
+                effects.dynamics != null -> "dynamics · 32-zone EQ"
+                effects.equalizer != null -> "legacy graphic EQ"
                 else -> "session observed; no compatible effect"
             }
             sessions[sessionId] = effects
@@ -149,9 +133,7 @@ object GlobalEqController {
             profile = profile.copy(enabled = enabled)
             if (enabled) {
                 sessions.values.forEach { effects ->
-                    if (effects.dynamics == null && effects.equalizer == null &&
-                        effects.bassBoost == null && effects.loudnessEnhancer == null
-                    ) {
+                    if (effects.dynamics == null && effects.equalizer == null) {
                         if (!attachDynamicsLocked(effects)) applyFallbackEffectsLocked(effects)
                     }
                     applyProfileLocked(effects)
@@ -355,66 +337,10 @@ object GlobalEqController {
         var peak = 0f
         for (index in 0..96) {
             val frequency = (20.0 * 1000.0.pow(index / 96.0)).toFloat()
-            val response = smoothBandGainAtFrequency(profile.bands, frequency) +
-                bassToneGainAtFrequency(frequency) +
-                trebleToneGainAtFrequency(frequency) +
-                profile.preampGainDb
+            val response = EqResponseMath.profileGainDb(profile, frequency, includePreamp = true)
             peak = maxOf(peak, response)
         }
         return peak.coerceIn(0f, 36f)
-    }
-
-    private fun gaussianWeight(frequencyHz: Float, centerHz: Float, sigmaOctaves: Float): Float {
-        val distance = ln((frequencyHz / centerHz).coerceAtLeast(0.0001f)) / LN_2
-        return exp(-0.5f * (distance / sigmaOctaves.coerceAtLeast(0.05f)).pow(2))
-    }
-
-    /** Adjacent bands can contribute up to 35% of their level into each neighbour. */
-    private fun smoothBandGainAtFrequency(
-        bands: List<EqBandParameter>,
-        frequencyHz: Float
-    ): Float {
-        val ordered = bands.sortedBy { it.frequencyHz }
-        var response = 0f
-        val sigmaBase = if (profile.smoothGains) 0.24f else 0.12f
-        val overlap = if (profile.bandsOverlapEnabled) {
-            (profile.bandsOverlapPercent / 100f) * 0.35f
-        } else 0f
-
-        ordered.forEachIndexed { index, band ->
-            if (!band.enabled) return@forEachIndexed
-            val sigma = (
-                sigmaBase * (1f / band.qFactor.coerceIn(0.1f, 12f)).coerceIn(0.55f, 1.8f) +
-                    overlap * 0.36f
-                ).coerceIn(0.09f, 0.62f)
-            var weight = gaussianWeight(frequencyHz, band.frequencyHz, sigma)
-            if (overlap > 0f) {
-                ordered.getOrNull(index - 1)?.let { previous ->
-                    weight += overlap * gaussianWeight(frequencyHz, previous.frequencyHz, sigma * 1.1f)
-                }
-                ordered.getOrNull(index + 1)?.let { next ->
-                    weight += overlap * gaussianWeight(frequencyHz, next.frequencyHz, sigma * 1.1f)
-                }
-            }
-            response += band.gainDb * weight
-        }
-        return response.coerceIn(-30f, 30f)
-    }
-
-    /** Soft low-shelf response centred at the selected bass frequency. */
-    private fun bassToneGainAtFrequency(frequencyHz: Float): Float {
-        val octaveDistance = ln((frequencyHz / profile.bassFrequencyHz).coerceAtLeast(0.0001f)) / LN_2
-        val transition = (0.62f / profile.bassQFactor).coerceIn(0.30f, 1.30f)
-        val weight = 1f / (1f + exp(octaveDistance / transition))
-        return (profile.bassGainDb / 12f * 16f * weight).coerceIn(-16f, 16f)
-    }
-
-    /** Soft high-shelf response centred at the selected treble frequency. */
-    private fun trebleToneGainAtFrequency(frequencyHz: Float): Float {
-        val octaveDistance = ln((frequencyHz / profile.trebleFrequencyHz).coerceAtLeast(0.0001f)) / LN_2
-        val transition = (0.62f / profile.trebleQFactor).coerceIn(0.30f, 1.30f)
-        val weight = 1f / (1f + exp(-octaveDistance / transition))
-        return (profile.trebleGainDb / 12f * 12f * weight).coerceIn(-12f, 12f)
     }
 
     private fun effectivePreampDbLocked(): Float =
@@ -449,20 +375,20 @@ object GlobalEqController {
     private fun attachDynamicsLocked(effects: SessionEffects): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
         return try {
+            // A single EQ response mapper avoids duplicate BassBoost/MBC colouring.
             val config = DynamicsProcessing.Config.Builder(
                 DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
                 CHANNEL_COUNT,
                 true,
                 BAND_COUNT,
-                true,
-                MBC_BAND_COUNT,
-                true,
-                BAND_COUNT,
+                false,
+                0,
+                false,
+                0,
                 true
             ).build()
             val dynamics = DynamicsProcessing(0, effects.sessionId, config)
             effects.dynamics = dynamics
-            attachAuxiliaryEffectsLocked(effects)
             applyDynamicsLocked(effects, dynamics)
             true
         } catch (error: RuntimeException) {
@@ -477,58 +403,30 @@ object GlobalEqController {
         }
     }
 
-    private fun attachAuxiliaryEffectsLocked(effects: SessionEffects) {
-        if (effects.bassBoost == null) {
-            runCatching {
-                BassBoost(0, effects.sessionId).also { effects.bassBoost = it }
-            }.onFailure { Log.w(TAG, "Hardware BassBoost attach failed for ${effects.sessionId}", it) }
-        }
-        if (effects.loudnessEnhancer == null) {
-            runCatching {
-                LoudnessEnhancer(effects.sessionId).also { effects.loudnessEnhancer = it }
-            }.onFailure { Log.w(TAG, "LoudnessEnhancer attach failed for ${effects.sessionId}", it) }
-        }
-    }
-
     @RequiresApi(Build.VERSION_CODES.P)
     private fun applyDynamicsLocked(effects: SessionEffects, effect: DynamicsProcessing) {
         applySessionPreampLocked(effects)
-        val orderedBands = profile.bands.sortedBy { it.frequencyHz }
-        for (index in orderedBands.indices) {
-            val band = orderedBands[index]
-            val previous = orderedBands.getOrNull(index - 1)?.frequencyHz ?: 20f
-            val next = orderedBands.getOrNull(index + 1)?.frequencyHz ?: 20_000f
-            val cutoff = sqrt(
-                band.frequencyHz.coerceAtLeast(previous + 1f) *
-                    next.coerceAtLeast(band.frequencyHz + 1f)
-            ).coerceIn(20f, 20_000f)
-            val preGain = smoothBandGainAtFrequency(orderedBands, cutoff)
-            val postGain = bassToneGainAtFrequency(cutoff) + trebleToneGainAtFrequency(cutoff)
 
+        // Android EqBand has cutoff + gain but no Q. Sample the complete RBJ
+        // response into 32 logarithmic zones rather than guessing a Gaussian shape.
+        var lowerEdgeHz = 20f
+        for (index in 0 until BAND_COUNT) {
+            val upperEdgeHz = (
+                20.0 * 1_000.0.pow((index + 1).toDouble() / BAND_COUNT)
+            ).toFloat().coerceIn(lowerEdgeHz + 0.1f, 20_000f)
+            val centerFrequencyHz = kotlin.math.sqrt(lowerEdgeHz * upperEdgeHz)
+            val gainDb = EqResponseMath.profileGainDb(profile, centerFrequencyHz)
             effect.setPreEqBandAllChannelsTo(
                 index,
-                DynamicsProcessing.EqBand(profile.enabled, cutoff, preGain.coerceIn(-30f, 30f))
-            )
-            effect.setPostEqBandAllChannelsTo(
-                index,
-                DynamicsProcessing.EqBand(profile.enabled, cutoff, postGain.coerceIn(-24f, 24f))
-            )
-        }
-
-        val compressionOn = profile.enabled && profile.avoidOverloading
-        val mbc = DynamicsProcessing.Mbc(true, compressionOn, MBC_BAND_COUNT)
-        floatArrayOf(120f, 4_000f, 20_000f).forEachIndexed { index, cutoff ->
-            val ratio = if (index == 0) 2.2f else 2.8f
-            val threshold = if (index == 0) -11f else -14f
-            mbc.setBand(
-                index,
-                DynamicsProcessing.MbcBand(
-                    compressionOn, cutoff, 8f, 60f, ratio, threshold,
-                    4f, -80f, 1f, 0f, 0f
+                DynamicsProcessing.EqBand(
+                    profile.enabled,
+                    upperEdgeHz,
+                    gainDb.coerceIn(-24f, 24f)
                 )
             )
+            lowerEdgeHz = upperEdgeHz
         }
-        effect.setMbcAllChannelsTo(mbc)
+
         applyLimiterStagesLocked(effect)
         effect.enabled = profile.enabled
     }
@@ -542,34 +440,20 @@ object GlobalEqController {
                 protected,
                 0,
                 1f,
-                40f,
-                12f,
-                -0.5f,
-                2.5f
+                profile.limiterReleaseMs.coerceIn(10f, 300f),
+                20f,
+                profile.limiterThresholdDb.coerceIn(-12f, 0f),
+                0f
             )
         )
     }
 
     private fun applySessionPreampLocked(effects: SessionEffects) {
-        val enhancer = effects.loudnessEnhancer
-        val positivePreamp = profile.preampGainDb.coerceAtLeast(0f)
-        val headroom = automaticHeadroomDbLocked()
-        val inputGain = profile.preampGainDb + dvcCompensationDb - headroom -
-            if (enhancer != null && positivePreamp > 0f) positivePreamp else 0f
-
+        val inputGain = profile.preampGainDb + dvcCompensationDb -
+            automaticHeadroomDbLocked()
         runCatching {
             effects.dynamics?.setInputGainAllChannelsTo(inputGain.coerceIn(-24f, 12f))
         }.onFailure { Log.w(TAG, "Session input gain update failed", it) }
-
-        // Makeup is deliberately modest; the DynamicsProcessing limiter remains
-        // responsible for peaks rather than an unlimited post-limiter volume lift.
-        val makeupDb = if (enhancer != null && profile.avoidOverloading) {
-            positivePreamp + minOf(headroom, 1.5f)
-        } else if (enhancer != null) positivePreamp else 0f
-        runCatching {
-            enhancer?.setTargetGain((makeupDb.coerceIn(0f, 12f) * 100f).toInt())
-            enhancer?.enabled = profile.enabled && makeupDb > 0f
-        }.onFailure { Log.w(TAG, "LoudnessEnhancer makeup update failed", it) }
     }
 
     private fun applyInputGainToAllSessionsLocked() {
@@ -583,7 +467,6 @@ object GlobalEqController {
     }
 
     private fun applyFallbackEffectsLocked(effects: SessionEffects) {
-        attachAuxiliaryEffectsLocked(effects)
         if (effects.equalizer == null) {
             runCatching { Equalizer(0, effects.sessionId).also { effects.equalizer = it } }
                 .onFailure { Log.w(TAG, "Equalizer fallback attach failed", it) }
@@ -597,43 +480,27 @@ object GlobalEqController {
                 val range = eq.bandLevelRange
                 for (index in 0 until eq.numberOfBands.toInt()) {
                     val frequencyHz = (eq.getCenterFreq(index.toShort()) / 1000f).coerceAtLeast(1f)
-                    val gain = smoothBandGainAtFrequency(profile.bands, frequencyHz) +
-                        bassToneGainAtFrequency(frequencyHz) + trebleToneGainAtFrequency(frequencyHz)
+                    val gain = EqResponseMath.profileGainDb(profile, frequencyHz, includePreamp = true)
                     val level = (gain * 100f).toInt().coerceIn(range[0].toInt(), range[1].toInt())
                     eq.setBandLevel(index.toShort(), level.toShort())
                 }
                 eq.enabled = profile.enabled
             }.onFailure { Log.w(TAG, "Equalizer fallback update failed", it) }
         }
-        effects.bassBoost?.let { boost ->
-            runCatching {
-                val level = profile.bassGainDb.coerceIn(0f, 12f) / 12f
-                boost.setStrength((level * 1000f).toInt().coerceIn(0, 1000).toShort())
-                boost.enabled = profile.enabled && level > 0f
-            }.onFailure { Log.w(TAG, "Hardware BassBoost update failed", it) }
-        }
-        applySessionPreampLocked(effects)
+
     }
 
     private fun applyProfileLocked(effects: SessionEffects) {
         if (effects.dynamics != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            runCatching {
-                applyDynamicsLocked(effects, effects.dynamics!!)
-                effects.bassBoost?.let { boost ->
-                    val level = profile.bassGainDb.coerceIn(0f, 12f) / 12f
-                    boost.setStrength((level * 1000f).toInt().coerceIn(0, 1000).toShort())
-                    boost.enabled = profile.enabled && level > 0f
-                }
-            }.onFailure { Log.w(TAG, "Session DSP update failed", it) }
+            runCatching { applyDynamicsLocked(effects, effects.dynamics!!) }
+                .onFailure { Log.w(TAG, "Session DSP update failed", it) }
         } else {
             applyFallbackLocked(effects)
         }
-        applySessionPreampLocked(effects)
     }
 
-    /** Fast path for a single fader move. */
+    /** Rebuild the full session response from the complete parametric profile. */
     private fun applyBandToAllSessionsLocked() {
-        val ordered = profile.bands.sortedBy { it.frequencyHz }
         sessions.values.forEach { effects ->
             if (!profile.enabled) {
                 effects.setEnabled(false)
@@ -641,25 +508,8 @@ object GlobalEqController {
             }
             val dynamics = effects.dynamics
             if (dynamics != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                runCatching {
-                    applySessionPreampLocked(effects)
-                    ordered.forEachIndexed { index, band ->
-                        val previous = ordered.getOrNull(index - 1)?.frequencyHz ?: 20f
-                        val next = ordered.getOrNull(index + 1)?.frequencyHz ?: 20_000f
-                        val cutoff = sqrt(
-                            band.frequencyHz.coerceAtLeast(previous + 1f) *
-                                next.coerceAtLeast(band.frequencyHz + 1f)
-                        ).coerceIn(20f, 20_000f)
-                        dynamics.setPreEqBandAllChannelsTo(
-                            index,
-                            DynamicsProcessing.EqBand(
-                                band.enabled,
-                                cutoff,
-                                smoothBandGainAtFrequency(ordered, cutoff)
-                            )
-                        )
-                    }
-                }.onFailure { Log.w(TAG, "Live band curve update failed", it) }
+                runCatching { applyDynamicsLocked(effects, dynamics) }
+                    .onFailure { Log.w(TAG, "Live band curve update failed", it) }
             } else {
                 applyFallbackLocked(effects)
             }
