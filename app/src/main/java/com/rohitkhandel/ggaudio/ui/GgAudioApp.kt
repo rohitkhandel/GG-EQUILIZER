@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rohitkhandel.ggaudio.audio.AudioBackendStatus
+import com.rohitkhandel.ggaudio.audio.AudioMetadataReader
 import com.rohitkhandel.ggaudio.audio.AudioSettingsSnapshot
 import com.rohitkhandel.ggaudio.audio.EqualizerBand
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
@@ -57,8 +58,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.Executor
 import com.rohitkhandel.ggaudio.ui.theme.*
@@ -81,6 +84,8 @@ fun GgAudioApp() {
         mutableStateOf(AudioBackendStatus(false, "Not connected. Tap Connect to check device support."))
     }
     var selectedTrack by remember { mutableStateOf<String?>(null) }
+    var selectedArtist by remember { mutableStateOf<String?>(null) }
+    var selectedAlbum by remember { mutableStateOf<String?>(null) }
     var queue by remember { mutableStateOf<List<LocalAudioFile>>(emptyList()) }
     var currentTrackIndex by remember { mutableIntStateOf(0) }
     var localPlayerReady by remember { mutableStateOf(false) }
@@ -120,7 +125,15 @@ fun GgAudioApp() {
         try {
             val storedQueue = presetRepository.playbackQueue.first()
             val restoredTracks = storedQueue.tracks.mapNotNull { track ->
-                runCatching { LocalAudioFile(Uri.parse(track.uri), track.title) }.getOrNull()
+                runCatching {
+                    LocalAudioFile(
+                        uri = Uri.parse(track.uri),
+                        title = track.title,
+                        artist = track.artist,
+                        album = track.album,
+                        durationMs = track.durationMs
+                    )
+                }.getOrNull()
             }
             if (restoredTracks.isNotEmpty()) {
                 queue = restoredTracks
@@ -197,28 +210,36 @@ fun GgAudioApp() {
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNotEmpty()) {
-            val chosenTracks = uris.distinctBy { it.toString() }.map { uri ->
+            presetScope.launch {
                 try {
-                    context.contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                } catch (_: SecurityException) {
-                    // A few document providers offer temporary-only access.
+                    val chosenTracks = withContext(Dispatchers.IO) {
+                        uris.distinctBy { it.toString() }.map { uri ->
+                            try {
+                                context.contentResolver.takePersistableUriPermission(
+                                    uri,
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                )
+                            } catch (_: SecurityException) {
+                                // Some document providers grant temporary-only access.
+                            }
+                            AudioMetadataReader.read(context, uri)
+                        }
+                    }
+                    queue = chosenTracks
+                    currentTrackIndex = 0
+                    queueRevision += 1
+                    selectedTrack = chosenTracks.firstOrNull()?.title
+                    selectedArtist = chosenTracks.firstOrNull()?.artist
+                    selectedAlbum = chosenTracks.firstOrNull()?.album
+                    localPlayerReady = false
+                    localPlayerPlaying = false
+                    playbackPositionMs = 0L
+                    playbackDurationMs = 0L
+                    playbackError = null
+                } catch (error: Exception) {
+                    playbackError = error.message ?: "Could not read the selected audio files."
                 }
-                LocalAudioFile(uri, queryDisplayName(context, uri))
             }
-            queue = chosenTracks
-            currentTrackIndex = 0
-            playbackPositionMs = 0L
-            queueRevision += 1
-            currentTrackIndex = 0
-            selectedTrack = chosenTracks.firstOrNull()?.title
-            localPlayerReady = false
-            localPlayerPlaying = false
-            playbackPositionMs = 0L
-            playbackDurationMs = 0L
-            playbackError = null
         }
     }
 
@@ -226,13 +247,14 @@ fun GgAudioApp() {
         val player = mediaController ?: return@LaunchedEffect
         if (queueRevision > 0 && queue.isNotEmpty()) {
             val mediaItems = queue.map { track ->
+                val metadata = MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artist)
+                    .setAlbumTitle(track.album)
+                    .build()
                 MediaItem.Builder()
                     .setUri(track.uri)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(track.title)
-                            .build()
-                    )
+                    .setMediaMetadata(metadata)
                     .build()
             }
             val startIndex = currentTrackIndex.coerceIn(0, mediaItems.lastIndex)
@@ -277,6 +299,8 @@ fun GgAudioApp() {
                 ) {
                     currentTrackIndex = player.currentMediaItemIndex.coerceAtLeast(0)
                     selectedTrack = mediaItem?.mediaMetadata?.title?.toString() ?: selectedTrack
+                    selectedArtist = mediaItem?.mediaMetadata?.artist?.toString()
+                    selectedAlbum = mediaItem?.mediaMetadata?.albumTitle?.toString()
                     playbackPositionMs = 0L
                     playbackDurationMs = player.duration.coerceAtLeast(0L)
                 }
@@ -292,6 +316,8 @@ fun GgAudioApp() {
             localPlayerReady = player.playbackState == Player.STATE_READY
             localPlayerPlaying = player.isPlaying
             selectedTrack = player.currentMediaItem?.mediaMetadata?.title?.toString()
+            selectedArtist = player.currentMediaItem?.mediaMetadata?.artist?.toString()
+            selectedAlbum = player.currentMediaItem?.mediaMetadata?.albumTitle?.toString()
             currentTrackIndex = player.currentMediaItemIndex.coerceAtLeast(0)
             playbackDurationMs = player.duration.coerceAtLeast(0L)
             playbackPositionMs = player.currentPosition.coerceAtLeast(0L)
@@ -302,7 +328,13 @@ fun GgAudioApp() {
     suspend fun persistPlaybackQueue() {
         try {
             val storedTracks = queue.take(500).map {
-                PlaybackQueueTrack(it.uri.toString(), it.title.take(512))
+                PlaybackQueueTrack(
+                    uri = it.uri.toString(),
+                    title = it.title.take(512),
+                    artist = it.artist,
+                    album = it.album,
+                    durationMs = it.durationMs
+                )
             }
             presetRepository.savePlaybackQueue(
                 PlaybackQueueSnapshot(
@@ -433,12 +465,15 @@ fun GgAudioApp() {
                 )
                 AppTab.Player -> LocalPlayerScreen(
                     trackName = selectedTrack,
+                    artistName = selectedArtist,
+                    albumName = selectedAlbum,
                     ready = localPlayerReady,
                     playing = localPlayerPlaying,
                     positionMs = playbackPositionMs,
                     durationMs = playbackDurationMs,
                     playbackError = playbackError ?: mediaConnectionError,
                     queueNames = queue.map { it.title },
+                    queueArtists = queue.map { it.artist },
                     currentTrackIndex = currentTrackIndex,
                     onOpenAudio = { audioPicker.launch(arrayOf("audio/*")) },
                     onSelectTrack = { index ->
