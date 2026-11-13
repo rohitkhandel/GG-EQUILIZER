@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.rohitkhandel.ggaudio.audio.EqualizerBand
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
 import com.rohitkhandel.ggaudio.ui.theme.*
+import com.rohitkhandel.ggaudio.ui.theme.Surface as CardSurface
 
 private enum class AppTab(val label: String, val symbol: String) {
     Equalizer("Equalizer", "≋"), Effects("Effects", "✦"), Presets("Presets", "▶"), Settings("Settings", "⚙")
@@ -37,7 +38,7 @@ fun GgAudioApp() {
         containerColor = Background,
         bottomBar = {
             Row(
-                Modifier.fillMaxWidth().background(Surface).padding(horizontal = 4.dp, vertical = 7.dp),
+                Modifier.fillMaxWidth().background(CardSurface).padding(horizontal = 4.dp, vertical = 7.dp),
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -95,7 +96,7 @@ private fun AppHeader(demoEnabled: Boolean, onDemoToggle: (Boolean) -> Unit) {
                 Text("ENGINE NOT CONNECTED", color = TextMuted, fontSize = 7.sp)
             }
         }
-        Surface(Modifier.fillMaxWidth().padding(top = 16.dp), color = Surface, shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Outline)) {
+        Surface(Modifier.fillMaxWidth().padding(top = 16.dp), color = CardSurface, shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Outline)) {
             Row(Modifier.padding(horizontal = 13.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("♫", color = Accent, fontSize = 23.sp)
                 Spacer(Modifier.width(12.dp))
