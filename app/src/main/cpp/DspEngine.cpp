@@ -8,8 +8,6 @@ namespace {
 
 constexpr float kMinimumSampleRateHz = 8000.0F;
 constexpr float kMaximumSampleRateHz = 192000.0F;
-constexpr float kDefaultBassFrequencyHz = 120.0F;
-constexpr float kDefaultTrebleFrequencyHz = 8000.0F;
 constexpr float kMaximumToneGainDb = 12.0F;
 
 bool isFiniteBand(const EqualizerBand& band) noexcept {
@@ -23,7 +21,10 @@ bool isFiniteBand(const EqualizerBand& band) noexcept {
 bool isSupportedType(BiquadType type) noexcept {
     return type == BiquadType::Peaking ||
            type == BiquadType::LowShelf ||
-           type == BiquadType::HighShelf;
+           type == BiquadType::HighShelf ||
+           type == BiquadType::LowPass ||
+           type == BiquadType::HighPass ||
+           type == BiquadType::BandPass;
 }
 
 }  // namespace
@@ -119,16 +120,16 @@ bool DspEngine::setBandEnabled(std::size_t index, bool enabled) {
 bool DspEngine::configureToneFilters() noexcept {
     const BiquadParameters bassParameters{
         BiquadType::LowShelf,
-        kDefaultBassFrequencyHz,
+        bassFrequencyHz_,
         bassGainDb_,
-        1.0F
+        bassQFactor_
     };
 
     const BiquadParameters trebleParameters{
         BiquadType::HighShelf,
-        std::min(kDefaultTrebleFrequencyHz, sampleRateHz_ * 0.45F),
+        std::min(trebleFrequencyHz_, sampleRateHz_ * 0.45F),
         trebleGainDb_,
-        1.0F
+        trebleQFactor_
     };
 
     return leftBass_.configure(sampleRateHz_, bassParameters) &&
@@ -145,6 +146,30 @@ bool DspEngine::setTone(float bassGainDb, float trebleGainDb) {
     std::lock_guard<std::mutex> lock(mutex_);
     bassGainDb_ = std::clamp(bassGainDb, -kMaximumToneGainDb, kMaximumToneGainDb);
     trebleGainDb_ = std::clamp(trebleGainDb, -kMaximumToneGainDb, kMaximumToneGainDb);
+    return configureToneFilters();
+}
+
+bool DspEngine::setToneParameters(
+    float bassFrequencyHz,
+    float bassQFactor,
+    float trebleFrequencyHz,
+    float trebleQFactor) {
+    if (!std::isfinite(bassFrequencyHz) ||
+        !std::isfinite(bassQFactor) ||
+        !std::isfinite(trebleFrequencyHz) ||
+        !std::isfinite(trebleQFactor) ||
+        bassFrequencyHz <= 0.0F ||
+        bassQFactor <= 0.0F ||
+        trebleFrequencyHz <= 0.0F ||
+        trebleQFactor <= 0.0F) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    bassFrequencyHz_ = std::clamp(bassFrequencyHz, 20.0F, 250.0F);
+    bassQFactor_ = std::clamp(bassQFactor, 0.5F, 2.0F);
+    trebleFrequencyHz_ = std::clamp(trebleFrequencyHz, 4000.0F, 16000.0F);
+    trebleQFactor_ = std::clamp(trebleQFactor, 0.5F, 2.0F);
     return configureToneFilters();
 }
 
