@@ -18,7 +18,7 @@ class EqualizerNavigationTest {
 
     @Test
     fun homeRendersTenBandControls() {
-        composeRule.onNodeWithText("Equalizer").fetchSemanticsNode()
+        composeRule.onNodeWithTag("nav_equalizer").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("31 Hz gain").fetchSemanticsNode()
         composeRule.onNodeWithContentDescription("16K Hz gain").assertExists()
     }
