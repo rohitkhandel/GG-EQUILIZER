@@ -70,4 +70,33 @@ class DspAudioProcessorTest {
         }
         assertTrue("EQ processor should boost the selected frequency.", outputEnergy > inputEnergy * 2.5)
     }
+    @Test
+    fun pcm16OutputPeakIsLimitedAfterEqAndPreampBoost() {
+        val bands = EqualizerDefaults.flat().mapIndexed { index, band ->
+            if (index == 5) band.copy(gainDb = 12f) else band
+        }
+        val processor = DspAudioProcessor(bands, initialPreampDb = 12f)
+        processor.configure(AudioProcessor.AudioFormat(48_000, 1, C.ENCODING_PCM_16BIT))
+        processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
+
+        val frameCount = 48_000
+        val input = ByteBuffer.allocateDirect(frameCount * 2).order(ByteOrder.nativeOrder())
+        repeat(frameCount) { index ->
+            val sample = sin(2.0 * PI * 1_000 * index / 48_000) * 0.6
+            input.putShort((sample * 32767.0).toInt().toShort())
+        }
+        input.flip()
+
+        processor.queueInput(input)
+        val output = processor.output.order(ByteOrder.nativeOrder())
+        var maximumPeak = 0f
+        while (output.remaining() >= 2) {
+            val sample = output.short.toFloat() / 32768f
+            maximumPeak = maxOf(maximumPeak, kotlin.math.abs(sample))
+        }
+
+        assertTrue("Boosted PCM output must stay under the -1 dBFS limiter ceiling.", maximumPeak <= 0.8915f)
+        assertTrue("Limiter should preserve a strong output level instead of muting the signal.", maximumPeak > 0.75f)
+    }
+
 }
