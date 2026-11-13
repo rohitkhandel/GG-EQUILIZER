@@ -4,7 +4,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.provider.OpenableColumns
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -290,7 +289,7 @@ fun GgAudioApp() {
                 }
 
                 override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-                    queue = player.readLocalAudioQueue()
+                    queue = player.readLocalAudioQueue(queue)
                 }
 
                 override fun onMediaItemTransition(
@@ -312,7 +311,7 @@ fun GgAudioApp() {
                 }
             }
             player.addListener(listener)
-            queue = player.readLocalAudioQueue()
+            queue = player.readLocalAudioQueue(queue)
             localPlayerReady = player.playbackState == Player.STATE_READY
             localPlayerPlaying = player.isPlaying
             selectedTrack = player.currentMediaItem?.mediaMetadata?.title?.toString()
@@ -555,36 +554,26 @@ fun GgAudioApp() {
     }
 }
 
-private fun queryDisplayName(context: Context, uri: Uri): String {
-    return try {
-        context.contentResolver.query(
-            uri,
-            arrayOf(OpenableColumns.DISPLAY_NAME),
-            null,
-            null,
-            null
-        )?.use { cursor ->
-            val nameColumn = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (cursor.moveToFirst() && nameColumn >= 0) {
-                cursor.getString(nameColumn)?.takeIf { it.isNotBlank() }
-            } else {
-                null
-            }
-        } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Selected audio"
-    } catch (_: Exception) {
-        uri.lastPathSegment?.substringAfterLast('/') ?: "Selected audio"
-    }
-}
-
-private fun Player.readLocalAudioQueue(): List<LocalAudioFile> {
+private fun Player.readLocalAudioQueue(
+    previousTracks: List<LocalAudioFile> = emptyList()
+): List<LocalAudioFile> {
+    val previousByUri = previousTracks.associateBy { it.uri.toString() }
     return (0 until mediaItemCount).mapNotNull { index ->
         val item = getMediaItemAt(index)
         val uri = item.localConfiguration?.uri ?: return@mapNotNull null
+        val previous = previousByUri[uri.toString()]
         val title = item.mediaMetadata.title?.toString()
             ?.takeIf { it.isNotBlank() }
+            ?: previous?.title
             ?: uri.lastPathSegment?.substringAfterLast('/')
             ?: "Audio"
-        LocalAudioFile(uri, title)
+        LocalAudioFile(
+            uri = uri,
+            title = title,
+            artist = item.mediaMetadata.artist?.toString() ?: previous?.artist,
+            album = item.mediaMetadata.albumTitle?.toString() ?: previous?.album,
+            durationMs = previous?.durationMs
+        )
     }
 }
 
