@@ -265,6 +265,19 @@ fun StudioEqualizerWorkspace(
     onOpenPresets: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().background(StudioBlack)) {
+        StudioTopBar(
+            state = state,
+            accent = accent,
+            onPower = viewModel::setMasterEnabled,
+            onGraphicMode = {
+                viewModel.setBandCount(if (state.bandCount == 15) 15 else 10)
+            },
+            onParametricMode = { viewModel.setBandCount(32) },
+            onSave = onSave,
+            onImport = onImport,
+            onReset = onReset,
+            onSelectPreset = viewModel::applyPreset
+        )
         StudioConsoleModeBar(state, viewModel, accent)
         Box(Modifier.fillMaxWidth().weight(1f)) {
             StudioBandWorkspace(state, viewModel, accent)
