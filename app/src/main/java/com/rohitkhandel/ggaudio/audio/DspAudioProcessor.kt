@@ -11,21 +11,44 @@ import kotlin.math.roundToInt
 
 data class DspSettingsSnapshot(
     val bands: List<EqualizerBand>,
-    val preampDb: Float
+    val preampDb: Float,
+    val bassBoostPercent: Int = 0,
+    val stereoWidthPercent: Int = 0
 )
 
 class DspSettingsStore(
     initialBands: List<EqualizerBand> = EqualizerDefaults.flat(),
-    initialPreampDb: Float = 0f
+    initialPreampDb: Float = 0f,
+    initialBassBoostPercent: Int = 0,
+    initialStereoWidthPercent: Int = 0
 ) {
     private val settings = AtomicReference(
-        DspSettingsSnapshot(initialBands.toList(), initialPreampDb)
+        DspSettingsSnapshot(
+            initialBands.toList(),
+            initialPreampDb,
+            initialBassBoostPercent,
+            initialStereoWidthPercent
+        )
     )
 
-    fun update(bands: List<EqualizerBand>, preampDb: Float) {
+    fun update(
+        bands: List<EqualizerBand>,
+        preampDb: Float,
+        bassBoostPercent: Int = 0,
+        stereoWidthPercent: Int = 0
+    ) {
         require(preampDb in -24f..12f) { "Preamp must be between -24 dB and +12 dB." }
         require(bands.size <= 32) { "At most 32 EQ bands are supported." }
-        settings.set(DspSettingsSnapshot(bands.toList(), preampDb))
+        require(bassBoostPercent in 0..100) { "Bass boost must be between 0 and 100 percent." }
+        require(stereoWidthPercent in 0..100) { "Stereo width must be between 0 and 100 percent." }
+        settings.set(
+            DspSettingsSnapshot(
+                bands.toList(),
+                preampDb,
+                bassBoostPercent,
+                stereoWidthPercent
+            )
+        )
     }
 
     fun snapshot(): DspSettingsSnapshot = settings.get()
@@ -35,31 +58,52 @@ class DspSettingsStore(
 object PlaybackDspSettings {
     val store = DspSettingsStore(EqualizerDefaults.balanced(), 0f)
 
-    fun update(bands: List<EqualizerBand>, preampDb: Float) {
-        store.update(bands, preampDb)
+    fun update(
+        bands: List<EqualizerBand>,
+        preampDb: Float,
+        bassBoostPercent: Int = 0,
+        stereoWidthPercent: Int = 0
+    ) {
+        store.update(bands, preampDb, bassBoostPercent, stereoWidthPercent)
     }
 }
 
 /**
  * Processes PCM16 audio inside GG Audio's Media3 player pipeline.
  * It does not capture or modify audio emitted by unrelated apps.
+ *
+ * Signal order: parametric EQ/preamp -> low-shelf bass -> stereo width -> peak limiter.
  */
 @UnstableApi
 class DspAudioProcessor(
     initialBands: List<EqualizerBand> = EqualizerDefaults.flat(),
     initialPreampDb: Float = 0f,
-    private val settingsStore: DspSettingsStore = DspSettingsStore(initialBands, initialPreampDb)
+    initialBassBoostPercent: Int = 0,
+    initialStereoWidthPercent: Int = 0,
+    private val settingsStore: DspSettingsStore = DspSettingsStore(
+        initialBands,
+        initialPreampDb,
+        initialBassBoostPercent,
+        initialStereoWidthPercent
+    )
 ) : BaseAudioProcessor() {
 
     private var appliedSettings: DspSettingsSnapshot? = null
     private var pcmProcessor: ParametricEqualizerProcessor? = null
+    private var bassBoostProcessor: BassBoostProcessor? = null
+    private var stereoWidthProcessor: StereoWidthProcessor? = null
     private var peakLimiter: PeakLimiter? = null
     private var scratch = FloatArray(0)
     private var configuredSampleRate = 0
     private var configuredChannels = 0
 
-    fun updateSettings(bands: List<EqualizerBand>, preampDb: Float = 0f) {
-        settingsStore.update(bands, preampDb)
+    fun updateSettings(
+        bands: List<EqualizerBand>,
+        preampDb: Float = 0f,
+        bassBoostPercent: Int = 0,
+        stereoWidthPercent: Int = 0
+    ) {
+        settingsStore.update(bands, preampDb, bassBoostPercent, stereoWidthPercent)
     }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
@@ -99,7 +143,10 @@ class DspAudioProcessor(
         if (requested != appliedSettings || pcmProcessor == null) {
             rebuildProcessor(requested)
         }
+
         pcmProcessor?.processInPlace(scratch)
+        bassBoostProcessor?.processInPlace(scratch)
+        stereoWidthProcessor?.processInPlace(scratch)
         peakLimiter?.processInPlace(scratch)
 
         val output = replaceOutputBuffer(byteCount).order(ByteOrder.nativeOrder())
@@ -113,12 +160,30 @@ class DspAudioProcessor(
 
     private fun rebuildProcessor(settings: DspSettingsSnapshot) {
         if (configuredSampleRate <= 0 || configuredChannels <= 0) return
+
         pcmProcessor = ParametricEqualizerProcessor(
             sampleRateHz = configuredSampleRate,
             channelCount = configuredChannels,
             bands = settings.bands,
             preampDb = settings.preampDb
         )
+        bassBoostProcessor = if (settings.bassBoostPercent > 0) {
+            BassBoostProcessor(
+                sampleRateHz = configuredSampleRate,
+                channelCount = configuredChannels,
+                strengthPercent = settings.bassBoostPercent
+            )
+        } else {
+            null
+        }
+        stereoWidthProcessor = if (settings.stereoWidthPercent > 0) {
+            StereoWidthProcessor(
+                channelCount = configuredChannels,
+                strengthPercent = settings.stereoWidthPercent
+            )
+        } else {
+            null
+        }
         peakLimiter = PeakLimiter(
             sampleRateHz = configuredSampleRate,
             channelCount = configuredChannels,
@@ -130,6 +195,8 @@ class DspAudioProcessor(
 
     override fun onReset() {
         pcmProcessor = null
+        bassBoostProcessor = null
+        stereoWidthProcessor = null
         peakLimiter = null
         appliedSettings = null
         scratch = FloatArray(0)

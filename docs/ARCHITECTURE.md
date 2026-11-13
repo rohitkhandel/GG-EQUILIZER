@@ -15,7 +15,7 @@
 2. **Domain** — ten equalizer bands, built-in profiles, preamp values and playback queue state.
 3. **Background playback** — a MediaSessionService owns ExoPlayer; the Compose Activity connects using a MediaController. Media3 supplies the system media notification and lock-screen controls.
 4. **Local playback** — Android document picker feeds a Media3 playlist and queue.
-5. **PCM adapter** — Media3 DspAudioProcessor accepts PCM16 buffers and applies GG Audio's software processor before playback.
+5. **PCM adapter** — Media3 DspAudioProcessor accepts PCM16 buffers and applies the ten-band EQ/preamp, low-shelf bass boost, mid/side stereo width and peak limiter before playback.
 6. **Preset and settings persistence** — AndroidX Preferences DataStore stores custom 10-band curves plus active EQ, preamp and effect values locally; JSON codecs validate restored state.
 7. **DSP core** — ParametricEqualizerProcessor builds peaking biquad filters and processes interleaved floating-point samples per channel.
 8. **Android effects** — GlobalAudioEffectsController probes optional Android Equalizer, BassBoost and Virtualizer effects and reports whether the device granted control.
@@ -30,6 +30,8 @@ The processor applies only to audio played by GG Audio. It is not an audio-captu
 ## DSP model
 
 - Ten nominal center frequencies: 31, 62, 125, 250, 500, 1k, 2k, 4k, 8k and 16k Hz.
+- Bass Boost uses a stateful RBJ low-shelf filter at 90 Hz, adjustable from 0 to +9 dB.
+- Stereo width uses mid/side processing on the left/right pair; mono streams remain unchanged and the final peak limiter controls resulting peaks.
 - Peaking biquad sections are cascaded with Q = 1.0.
 - Per-band UI gain is bounded to -12 dB through +12 dB.
 - Software preamp is bounded to -24 dB through +12 dB.

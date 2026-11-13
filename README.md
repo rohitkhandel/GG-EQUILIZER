@@ -10,6 +10,7 @@ A private, offline-first native Android audio player and equalizer. The goal is 
 - Android 8.0+ baseline (minSdk 26).
 - Ten-band graphic equalizer with Balanced, Bass Boost, Vocal, Treble and Flat profiles.
 - Peaking biquad software EQ and adjustable preamp in the PCM processing path.
+- Software low-shelf Bass Boost (0 to +9 dB) and mid/side Stereo Width are wired into the same local PCM chain.
 - Linked-channel PCM peak limiter after EQ/preamp, set to a -1 dBFS ceiling with an 80 ms gain-release time.
 - Media3 ExoPlayer is hosted in a MediaSessionService, so playback can continue outside the Activity.
 - System media-style notification and lock-screen transport controls are provided by Media3.
@@ -25,7 +26,7 @@ A private, offline-first native Android audio player and equalizer. The goal is 
 
 ## Important audio scope
 
-The software DSP is connected to audio played **inside GG Audio's local player**. It does not capture audio from unrelated apps.
+The ten-band EQ, preamp, software Bass Boost, Stereo Width and peak limiter are connected to audio played **inside GG Audio's local player**. They do not capture audio from unrelated apps.
 
 The global AudioEffect adapter is best-effort only. Android's session-0 insert effects are deprecated and device vendors may reject them or restrict their control. A positive connection result is not a promise that every third-party app's output is processed. Real behavior must be checked on the target phone.
 

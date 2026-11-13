@@ -393,8 +393,15 @@ fun GgAudioApp() {
         }
     }
 
-    LaunchedEffect(bands, preamp, settingsLoaded) {
-        if (settingsLoaded) PlaybackDspSettings.update(bands, preamp)
+    LaunchedEffect(bands, preamp, bassStrength, virtualizerStrength, settingsLoaded) {
+        if (settingsLoaded) {
+            PlaybackDspSettings.update(
+                bands = bands,
+                preampDb = preamp,
+                bassBoostPercent = bassStrength.toInt().coerceIn(0, 100),
+                stereoWidthPercent = virtualizerStrength.toInt().coerceIn(0, 100)
+            )
+        }
     }
 
     val controller = remember { GlobalAudioEffectsController() }
@@ -405,13 +412,6 @@ fun GgAudioApp() {
     LaunchedEffect(bands, backendStatus.connected) {
         if (backendStatus.connected) controller.applyBandGains(bands)
     }
-    LaunchedEffect(bassStrength, virtualizerStrength, backendStatus.connected) {
-        if (backendStatus.connected) {
-            controller.setBassStrength(bassStrength.toInt())
-            controller.setVirtualizerStrength(virtualizerStrength.toInt())
-        }
-    }
-
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = Background,
@@ -443,8 +443,6 @@ fun GgAudioApp() {
                         connecting = false
                         if (result.connected) {
                             controller.applyBandGains(bands)
-                            controller.setBassStrength(bassStrength.toInt())
-                            controller.setVirtualizerStrength(virtualizerStrength.toInt())
                         }
                     }
                 },
@@ -956,7 +954,7 @@ private fun EffectsScreen(
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 20.dp)) {
         Text("SPATIAL & DYNAMIC", color = Accent, fontSize = 9.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
         Text("Sound effects", color = TextPrimary, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
-        Text("Optional Android audio effects. Availability depends on the phone.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+        Text("Software bass and stereo processing for GG Audio playback.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
         Surface(
             Modifier.fillMaxWidth().padding(top = 19.dp),
             color = CardSurface,
@@ -966,24 +964,23 @@ private fun EffectsScreen(
             Column(Modifier.padding(15.dp)) {
                 EffectControl(
                     title = "Bass enhancement",
-                    description = "Android BassBoost effect",
+                    description = "Low-shelf DSP · up to +9 dB",
                     value = bassStrength,
-                    available = status.connected && status.bassBoostAvailable,
+                    available = true,
                     onValueChange = onBassChange
                 )
                 Spacer(Modifier.height(19.dp))
                 EffectControl(
-                    title = "Stereo virtualizer",
-                    description = "Android Virtualizer effect",
+                    title = "Stereo width",
+                    description = "Mid/side stereo widening · local DSP",
                     value = virtualizerStrength,
-                    available = status.connected && status.virtualizerAvailable,
+                    available = true,
                     onValueChange = onVirtualizerChange
                 )
             }
         }
         Text(
-            if (!status.connected) "Connect the system audio backend first."
-            else "Unavailable effects remain disabled; GG Audio will not fake their activation.",
+            "Both controls are processed in GG Audio's PCM pipeline. They do not modify audio from unrelated apps; the optional system EQ connection is separate.",
             color = TextMuted,
             fontSize = 9.sp,
             lineHeight = 14.sp,
@@ -1007,7 +1004,7 @@ private fun EffectControl(
                 Text(description, color = TextMuted, fontSize = 9.sp, modifier = Modifier.padding(top = 2.dp))
             }
             Text(
-                if (available) "${value.toInt()}%" else "UNAVAILABLE",
+                if (available) "${value.toInt()}% · LOCAL" else "UNAVAILABLE",
                 color = if (available) Accent else TextMuted,
                 fontSize = 8.sp,
                 fontWeight = FontWeight.Bold
