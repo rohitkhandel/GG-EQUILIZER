@@ -630,8 +630,8 @@ private fun AppHeader(
             Surface(
                 Modifier.size(40.dp),
                 shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF2A211B),
-                border = BorderStroke(1.dp, Color(0xFF59412D))
+                color = Color(0xFF14291D),
+                border = BorderStroke(1.dp, Color(0xFF315B40))
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text("GG", color = Accent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -645,8 +645,8 @@ private fun AppHeader(
             Spacer(Modifier.weight(1f))
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    if (status.connected) "SYSTEM EQ ATTACHED" else "DSP STANDBY",
-                    color = if (status.connected) Success else TextMuted,
+                    if (status.connected) "SYSTEM EQ ATTACHED" else "LOCAL DSP READY",
+                    color = if (status.connected) Success else Accent,
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -678,8 +678,8 @@ private fun AppHeader(
                         shape = RoundedCornerShape(9.dp),
                         contentPadding = PaddingValues(horizontal = 13.dp, vertical = 7.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (status.connected) Color(0xFF3A2520) else Color(0xFF633D25),
-                            contentColor = Color(0xFFFFC18B)
+                            containerColor = if (status.connected) Color(0xFF202925) else Color(0xFF1E4A33),
+                            contentColor = if (status.connected) TextMuted else Color(0xFF9AF0B8)
                         )
                     ) {
                         Text(
