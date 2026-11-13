@@ -42,6 +42,7 @@ import com.rohitkhandel.ggaudio.audio.AudioBackendStatus
 import com.rohitkhandel.ggaudio.audio.AudioMetadataReader
 import com.rohitkhandel.ggaudio.audio.AudioSettingsSnapshot
 import com.rohitkhandel.ggaudio.audio.AppAudioSessionStatus
+import com.rohitkhandel.ggaudio.audio.MediaPlayerTrackingStatus
 import com.rohitkhandel.ggaudio.audio.AppEqualizerProfile
 import com.rohitkhandel.ggaudio.audio.EqualizerBand
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
@@ -106,6 +107,7 @@ fun GgAudioApp() {
 
     val context = LocalContext.current
     val activeExternalAudioApps by AppAudioSessionStatus.activePackages.collectAsState()
+    val trackedMediaPlayers by MediaPlayerTrackingStatus.playingPackages.collectAsState()
     val presetRepository = remember(context) { SavedEqualizerPresetRepository(context) }
     val savedPresets by presetRepository.presets.collectAsState(initial = emptyList())
     val savedAppProfiles by presetRepository.appProfiles.collectAsState(initial = emptyList())
@@ -594,6 +596,7 @@ fun GgAudioApp() {
                     status = backendStatus,
                     settingsStatus = settingsStatus,
                     activeExternalAudioApps = activeExternalAudioApps,
+                    trackedMediaPlayers = trackedMediaPlayers,
                     savedAppProfiles = savedAppProfiles,
                     selectedAppPackage = selectedAppProfilePackage,
                     onSelectedAppPackageChange = { selectedAppProfilePackage = it },
@@ -1082,6 +1085,7 @@ private fun SettingsScreen(
     status: AudioBackendStatus,
     settingsStatus: String,
     activeExternalAudioApps: Set<String>,
+    trackedMediaPlayers: Set<String>,
     savedAppProfiles: List<AppEqualizerProfile>,
     selectedAppPackage: String?,
     onSelectedAppPackageChange: (String?) -> Unit,
@@ -1091,7 +1095,7 @@ private fun SettingsScreen(
 ) {
     var appMenuOpen by remember { mutableStateOf(false) }
     val appOptions = remember(activeExternalAudioApps, savedAppProfiles) {
-        (activeExternalAudioApps + savedAppProfiles.map { it.packageName }).distinct().sorted()
+        (activeExternalAudioApps + trackedMediaPlayers + savedAppProfiles.map { it.packageName }).distinct().sorted()
     }
     val selectedPackage = selectedAppPackage?.takeIf { it in appOptions } ?: appOptions.firstOrNull()
     val selectedProfile = savedAppProfiles.firstOrNull { it.packageName == selectedPackage }
@@ -1108,6 +1112,40 @@ private fun SettingsScreen(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(22.dp)) {
         Text("SYSTEM DIAGNOSTICS", color = Accent, fontSize = 9.sp, letterSpacing = 1.5.sp)
         Text("Settings", color = TextPrimary, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+        Surface(
+            Modifier.fillMaxWidth().padding(top = 16.dp),
+            color = CardSurface,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Outline)
+        ) {
+            Column(Modifier.padding(15.dp)) {
+                Text("STREAMING APP DETECTION", color = Accent, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                Text(
+                    "Allow notification access so GG Audio can detect active media sessions such as Spotify and YouTube Music.",
+                    color = TextMuted, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.padding(top = 7.dp)
+                )
+                DiagnosticRow("Media sessions detected", if (trackedMediaPlayers.isEmpty()) "NONE" else "${trackedMediaPlayers.size} PLAYING")
+                if (trackedMediaPlayers.isNotEmpty()) {
+                    Text(trackedMediaPlayers.sorted().joinToString(), color = TextMuted, fontSize = 8.sp, lineHeight = 12.sp)
+                }
+                Button(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF633D25), contentColor = Color(0xFFFFC18B)),
+                    shape = RoundedCornerShape(9.dp)
+                ) {
+                    Text("ENABLE PLAYER TRACKING", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    "Detection is not the same as audio processing. Effects still require the player to expose a compatible Android audio session.",
+                    color = TextMuted, fontSize = 8.sp, lineHeight = 12.sp, modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+        }
         Surface(
             Modifier.fillMaxWidth().padding(top = 20.dp),
             color = CardSurface,
@@ -1181,7 +1219,7 @@ private fun SettingsScreen(
                                         Column {
                                             Text(packageName, fontSize = 10.sp)
                                             Text(
-                                                if (packageName in activeExternalAudioApps) "ACTIVE SESSION" else "SAVED PROFILE",
+                                                when { packageName in activeExternalAudioApps -> "AUDIO EFFECT SESSION ATTACHED"; packageName in trackedMediaPlayers -> "MEDIA PLAYING · EFFECT NOT ATTACHED"; else -> "SAVED PROFILE" },
                                                 color = TextMuted,
                                                 fontSize = 8.sp
                                             )
@@ -1197,8 +1235,12 @@ private fun SettingsScreen(
                     }
                     if (selectedPackage != null) {
                         DiagnosticRow(
-                            "Session status",
-                            if (selectedPackage in activeExternalAudioApps) "ACTIVE NOW" else "NOT PLAYING"
+                            "Audio effect session",
+                            if (selectedPackage in activeExternalAudioApps) "ATTACHED" else "NOT ATTACHED"
+                        )
+                        DiagnosticRow(
+                            "Media player",
+                            if (selectedPackage in trackedMediaPlayers) "PLAYING" else "NOT DETECTED"
                         )
                         DiagnosticRow(
                             "Saved profile",

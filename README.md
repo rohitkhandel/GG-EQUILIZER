@@ -19,7 +19,9 @@ A private, offline-first native Android equalizer with an optional local audio t
 - Embedded track title, artist, album and duration tags are read locally when available; filenames remain the fallback.
 - The now-playing panel, queue and media-session metadata show embedded artist/album tags when available.
 - Legacy Android global Equalizer route (session 0), retained only as a device-dependent fallback.
-- Session-bound Equalizer, BassBoost and Virtualizer routing for compatible players that broadcast Android's standard audio-effect session open/close actions; active package names appear in Settings.
+- Notification-listener-backed media-session discovery for currently playing external apps, including package-level diagnostics in Settings.
+- External audio-effect session broadcasts are received by the notification-listener service, independently of GG Audio's optional local player service.
+- Session-bound Equalizer, BassBoost and Virtualizer routing for compatible players that broadcast Android's standard audio-effect session open/close actions.
 - Independent per-app EQ profiles persist each supported package's 10 bands, preamp, Bass Boost and Stereo Width in on-device DataStore and are selected by package name at session time.
 - Custom equalizer presets can be saved, applied and deleted using on-device DataStore storage.
 - Active EQ curve, preamp, and optional effect levels are restored and saved automatically on-device.
@@ -30,7 +32,7 @@ A private, offline-first native Android equalizer with an optional local audio t
 
 The ten-band EQ, preamp, software Bass Boost, Stereo Width and peak limiter are connected to audio played **inside GG Audio's local player**.
 
-For external apps, GG Audio listens for Android's standard audio-effect session broadcasts and attempts to attach insert effects to the announced session ID. This works only when the player sends those broadcasts and the device grants effect control. When a saved profile exists for that package, its EQ bands, preamp, Bass Boost and Stereo Width are applied to that session; the preamp is folded into the session Equalizer's hardware-band gains. Otherwise the shared default settings are used. Saved profiles can be created, loaded for editing, updated and deleted in Settings. Editing a profile updates the external session when the profile is saved.
+For external apps, enable GG Audio's notification access in Android Settings. The notification-listener service detects active media sessions and independently listens for Android's standard audio-effect session broadcasts, even when GG Audio's local player is not running. Media-session detection identifies the player package but does not reveal its audio-session ID. GG Audio attaches insert effects only when the player separately sends the standard audio-effect session broadcast and the device grants effect control. When a saved profile exists for that package, its EQ bands, preamp, Bass Boost and Stereo Width are applied to that session; the preamp is folded into the session Equalizer's hardware-band gains. Otherwise the shared default settings are used. Saved profiles can be created, loaded for editing, updated and deleted in Settings. Editing a profile updates the external session when the profile is saved.
 
 The legacy global AudioEffect adapter is best-effort only. Android's session-0 insert effects are deprecated and device vendors may reject them or restrict their control. No route is guaranteed on every device or player. Real behavior must be checked on the target phone.
 
@@ -57,6 +59,7 @@ Run gradle --no-daemon assembleDebug and gradle --no-daemon testDebugUnitTest fr
 
 ## Planned next work
 
+- Verify Spotify and YouTube Music media-session discovery and audio-effect session broadcasts on the target phone.
 - Test per-app profile switching with two compatible players on the target phone.
 - Verify session-broadcast compatibility and control ownership on the target phone.
 - Physical-device tests using two compatible external players, confirming that changing one saved profile leaves the other player unchanged.
