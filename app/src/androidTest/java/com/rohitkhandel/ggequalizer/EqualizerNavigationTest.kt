@@ -1,12 +1,14 @@
 package com.rohitkhandel.ggequalizer
 
-import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import org.junit.Assert.assertNull
+import com.rohitkhandel.ggequalizer.audio.NativeDspBridge
+import com.rohitkhandel.ggequalizer.ui.EqViewModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import androidx.lifecycle.ViewModelProvider
 import org.junit.Rule
 import org.junit.Test
@@ -20,9 +22,9 @@ class EqualizerNavigationTest {
 
     @Test
     fun presetsDockOpensThePresetLibrary() {
-        composeRule.onNodeWithText("PRESETS").assertExists().performClick()
+        composeRule.onNodeWithText("PRESETS").assertIsDisplayed().performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("PRESET LIBRARY").assertExists()
+        composeRule.onNodeWithText("PRESET LIBRARY").assertIsDisplayed()
     }
 
     @Test
@@ -36,23 +38,20 @@ class EqualizerNavigationTest {
     }
     @Test
     fun parametricEditorCanSelectAllSixFilterTypes() {
-        val vm = ViewModelProvider(composeRule.activity)[com.rohitkhandel.ggequalizer.ui.EqViewModel::class.java]
-        vm.setBandCount(32)
-        vm.setBandFilterType(0, com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_LOW_PASS)
-        assertEquals(
-            com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_LOW_PASS,
-            vm.uiState.value.bands[0].filterType
-        )
-        vm.setBandFilterType(0, com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_HIGH_PASS)
-        assertEquals(
-            com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_HIGH_PASS,
-            vm.uiState.value.bands[0].filterType
-        )
-        vm.setBandFilterType(0, com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_BAND_PASS)
-        assertEquals(
-            com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_BAND_PASS,
-            vm.uiState.value.bands[0].filterType
-        )
+        composeRule.runOnUiThread {
+            val vm = ViewModelProvider(composeRule.activity)[EqViewModel::class.java]
+            vm.setBandCount(32)
+
+            vm.setBandFilterType(0, NativeDspBridge.FILTER_LOW_PASS)
+            assertEquals(NativeDspBridge.FILTER_LOW_PASS, vm.uiState.value.bands[0].filterType)
+
+            vm.setBandFilterType(0, NativeDspBridge.FILTER_HIGH_PASS)
+            assertEquals(NativeDspBridge.FILTER_HIGH_PASS, vm.uiState.value.bands[0].filterType)
+
+            vm.setBandFilterType(0, NativeDspBridge.FILTER_BAND_PASS)
+            assertEquals(NativeDspBridge.FILTER_BAND_PASS, vm.uiState.value.bands[0].filterType)
+        }
+        composeRule.waitForIdle()
     }
 
 }
