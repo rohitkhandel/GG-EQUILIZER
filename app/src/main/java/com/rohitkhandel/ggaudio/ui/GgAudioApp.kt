@@ -241,17 +241,7 @@ fun GgAudioApp() {
                 }
 
                 override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-                    val restoredQueue = (0 until player.mediaItemCount).mapNotNull { index ->
-                        val item = player.getMediaItemAt(index)
-                        val uri = item.localConfiguration?.uri ?: return@mapNotNull null
-                        val title = item.mediaMetadata.title?.toString()
-                            ?: uri.lastPathSegment?.substringAfterLast('/')
-                            ?: "Audio"
-                        LocalAudioFile(uri, title)
-                    }
-                    if (restoredQueue.isNotEmpty() || player.mediaItemCount == 0) {
-                        queue = restoredQueue
-                    }
+                    queue = player.readLocalAudioQueue()
                 }
 
                 override fun onMediaItemTransition(
@@ -271,6 +261,7 @@ fun GgAudioApp() {
                 }
             }
             player.addListener(listener)
+            queue = player.readLocalAudioQueue()
             localPlayerReady = player.playbackState == Player.STATE_READY
             localPlayerPlaying = player.isPlaying
             selectedTrack = player.currentMediaItem?.mediaMetadata?.title?.toString()
@@ -478,6 +469,18 @@ private fun queryDisplayName(context: Context, uri: Uri): String {
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Selected audio"
     } catch (_: Exception) {
         uri.lastPathSegment?.substringAfterLast('/') ?: "Selected audio"
+    }
+}
+
+private fun Player.readLocalAudioQueue(): List<LocalAudioFile> {
+    return (0 until mediaItemCount).mapNotNull { index ->
+        val item = getMediaItemAt(index)
+        val uri = item.localConfiguration?.uri ?: return@mapNotNull null
+        val title = item.mediaMetadata.title?.toString()
+            ?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment?.substringAfterLast('/')
+            ?: "Audio"
+        LocalAudioFile(uri, title)
     }
 }
 

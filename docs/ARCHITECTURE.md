@@ -44,6 +44,7 @@ A device that rejects session 0 will still be able to use the software DSP in GG
 ## Quality gates
 
 - GitHub Actions builds the debug APK and runs JVM unit tests on source changes.
+- No emulator or device image is installed in CI; this keeps the native build workflow emulator-free.
 - Emulator-based CI was removed; the project no longer provisions or boots an emulator.
 - Physical-device behavior, including the Moto G82 target, remains unverified until tested on the actual phone.
 - Audio processing tests verify numerical PCM behavior; they do not substitute for listening tests or device compatibility checks.
