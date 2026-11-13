@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge
@@ -26,7 +27,7 @@ class EqualizerNavigationTest {
 
     @Test
     fun presetsDockOpensThePresetLibrary() {
-        composeRule.onAllNodesWithText("PRESETS").onLast().assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("dock-presets").assertIsDisplayed().performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithText("PRESET LIBRARY").assertIsDisplayed()
     }
@@ -45,17 +46,17 @@ class EqualizerNavigationTest {
     fun graphicModeChipsSelectTheirExactBandCounts() {
         val viewModel = ViewModelProvider(composeRule.activity)[EqViewModel::class.java]
 
-        composeRule.onNodeWithText("15", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("eq-mode-15").assertIsDisplayed().performClick()
         composeRule.runOnIdle {
             assertEquals("15-band chip must select exactly 15 bands", 15, viewModel.uiState.value.bandCount)
         }
 
-        composeRule.onNodeWithText("10", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("eq-mode-10").assertIsDisplayed().performClick()
         composeRule.runOnIdle {
             assertEquals("10-band chip must select exactly 10 bands", 10, viewModel.uiState.value.bandCount)
         }
 
-        composeRule.onNodeWithText("PARA", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("eq-mode-para").assertIsDisplayed().performClick()
         composeRule.runOnIdle {
             assertEquals("Parametric chip must select the 32-slot editor", 32, viewModel.uiState.value.bandCount)
         }
@@ -66,6 +67,7 @@ class EqualizerNavigationTest {
         val viewModel = ViewModelProvider(composeRule.activity)[EqViewModel::class.java]
 
         composeRule.runOnUiThread {
+            viewModel.setBandCount(15)
             viewModel.selectBand(15)
             viewModel.setBandCount(10)
             assertTrue(
