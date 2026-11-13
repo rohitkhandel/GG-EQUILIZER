@@ -9,7 +9,13 @@ class PlaybackQueueJsonCodecTest {
     fun queueRoundTripKeepsOrderIndexAndPosition() {
         val queue = PlaybackQueueSnapshot(
             tracks = listOf(
-                PlaybackQueueTrack("content://media/track/1", "First"),
+                PlaybackQueueTrack(
+                    uri = "content://media/track/1",
+                    title = "First",
+                    artist = "Artist One",
+                    album = "Album One",
+                    durationMs = 214_000L
+                ),
                 PlaybackQueueTrack("content://media/track/2", "Second")
             ),
             currentIndex = 1,
@@ -35,4 +41,16 @@ class PlaybackQueueJsonCodecTest {
             )
         }.isFailure)
     }
+    @Test
+    fun oldQueueJsonWithoutOptionalTagsStillLoads() {
+        val oldJson = """{"tracks":[{"uri":"content://media/track/1","title":"Older track"}],"currentIndex":0,"positionMs":4200}"""
+
+        val decoded = PlaybackQueueJsonCodec.decode(oldJson)
+
+        assertEquals("Older track", decoded.tracks.single().title)
+        assertEquals(null, decoded.tracks.single().artist)
+        assertEquals(null, decoded.tracks.single().album)
+        assertEquals(null, decoded.tracks.single().durationMs)
+    }
+
 }
