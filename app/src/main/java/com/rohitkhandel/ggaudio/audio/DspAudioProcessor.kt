@@ -66,7 +66,7 @@ class DspAudioProcessor(
         require(byteCount % 2 == 0) { "PCM16 input must contain complete samples." }
 
         val sampleCount = byteCount / 2
-        if (scratch.size < sampleCount) scratch = FloatArray(sampleCount)
+        if (scratch.size != sampleCount) scratch = FloatArray(sampleCount)
 
         val input = inputBuffer.order(ByteOrder.nativeOrder())
         for (index in 0 until sampleCount) {
@@ -78,7 +78,7 @@ class DspAudioProcessor(
         if (requested != appliedSettings || pcmProcessor == null) {
             rebuildProcessor(requested)
         }
-        pcmProcessor?.processInPlace(scratch.copyOf(sampleCount))
+        pcmProcessor?.processInPlace(scratch)
 
         val output = replaceOutputBuffer(byteCount).order(ByteOrder.nativeOrder())
         for (index in 0 until sampleCount) {
