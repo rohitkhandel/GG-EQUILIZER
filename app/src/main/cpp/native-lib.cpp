@@ -46,6 +46,15 @@ bool decodeFilterType(jint value, BiquadType* output) noexcept {
         case 2:
             *output = BiquadType::HighShelf;
             return true;
+        case 3:
+            *output = BiquadType::LowPass;
+            return true;
+        case 4:
+            *output = BiquadType::HighPass;
+            return true;
+        case 5:
+            *output = BiquadType::BandPass;
+            return true;
         default:
             return false;
     }
@@ -188,6 +197,29 @@ Java_com_rohitkhandel_ggequalizer_audio_NativeDspBridge_nativeSetTone(
     try {
         const auto engine = findEngine(handle);
         return engine && engine->setTone(bassGainDb, trebleGainDb)
+            ? JNI_TRUE
+            : JNI_FALSE;
+    } catch (...) {
+        return JNI_FALSE;
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_rohitkhandel_ggequalizer_audio_NativeDspBridge_nativeSetToneParameters(
+    JNIEnv*,
+    jobject,
+    jlong handle,
+    jfloat bassFrequencyHz,
+    jfloat bassQFactor,
+    jfloat trebleFrequencyHz,
+    jfloat trebleQFactor) {
+    try {
+        const auto engine = findEngine(handle);
+        return engine && engine->setToneParameters(
+            bassFrequencyHz,
+            bassQFactor,
+            trebleFrequencyHz,
+            trebleQFactor)
             ? JNI_TRUE
             : JNI_FALSE;
     } catch (...) {
