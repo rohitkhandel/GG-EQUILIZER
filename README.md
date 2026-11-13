@@ -4,12 +4,13 @@ A private, offline-first native Android audio player and equalizer. The goal is 
 
 ## Current implementation
 
-**Phase 2 — Software DSP and local playback**
+**Phase 3 — Local playback DSP safety and quality**
 
 - Native Kotlin + Jetpack Compose app (no WebView).
 - Android 8.0+ baseline (minSdk 26).
 - Ten-band graphic equalizer with Balanced, Bass Boost, Vocal, Treble and Flat profiles.
 - Peaking biquad software EQ and adjustable preamp in the PCM processing path.
+- Linked-channel PCM peak limiter after EQ/preamp, set to a -1 dBFS ceiling with an 80 ms gain-release time.
 - Media3 ExoPlayer is hosted in a MediaSessionService, so playback can continue outside the Activity.
 - System media-style notification and lock-screen transport controls are provided by Media3.
 - Multi-file playback queue with track selection, previous/next, play/pause, stop and seek.
@@ -26,11 +27,11 @@ The software DSP is connected to audio played **inside GG Audio's local player**
 
 The global AudioEffect adapter is best-effort only. Android's session-0 insert effects are deprecated and device vendors may reject them or restrict their control. A positive connection result is not a promise that every third-party app's output is processed. Real behavior must be checked on the target phone.
 
-The PCM adapter currently accepts 16-bit PCM. Supported file formats and codecs depend on Media3 and the Android device's installed decoders.
+The PCM adapter currently accepts 16-bit PCM. Supported file formats and codecs depend on Media3 and the Android device's installed decoders. The limiter is a sample-peak safety stage, not a look-ahead true-peak limiter.
 
 ## Verification
 
-The latest source commit with the multi-track queue is built by GitHub Actions. The assembleDebug and testDebugUnitTest steps passed for that commit. This is source/build verification, not a claim that playback has already been tested on a physical phone.
+GitHub Actions builds the debug APK and runs JVM unit tests, including DSP and playback-state tests. Passing CI verifies source compilation and tested logic; it does not prove that audio has been listened to or validated on a physical phone.
 
 There is no emulator workflow in this repository. Physical-device verification remains a separate step.
 
@@ -49,7 +50,7 @@ Run gradle --no-daemon assembleDebug and gradle --no-daemon testDebugUnitTest fr
 
 ## Planned next work
 
-- Custom preset import/export and playback state restoration.
-- Background playback, notification and lock-screen media controls.
-- More detailed now-playing metadata and library browsing.
-- Physical-device compatibility checks and performance tuning.
+- Library browsing, search/sort and richer now-playing metadata.
+- Audit Media3 decoder compatibility and error handling across local file types.
+- Physical-device audio checks, then CPU, latency and battery tuning.
+- Decide whether limiter controls belong in the UI after listening tests.
