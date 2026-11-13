@@ -7,7 +7,10 @@ namespace ggequalizer {
 enum class BiquadType : std::int32_t {
     Peaking = 0,
     LowShelf = 1,
-    HighShelf = 2
+    HighShelf = 2,
+    LowPass = 3,
+    HighPass = 4,
+    BandPass = 5
 };
 
 /**
@@ -46,6 +49,7 @@ public:
 private:
     BiquadCoefficients coefficients_{};
     BiquadParameters parameters_{};
+    float outputGainLinear_{1.0F};
     float z1_{0.0F};
     float z2_{0.0F};
 };
