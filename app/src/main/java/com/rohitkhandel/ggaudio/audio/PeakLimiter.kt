@@ -58,7 +58,7 @@ class PeakLimiter(
             currentGain = if (targetGain < currentGain) {
                 targetGain
             } else {
-                1.0 - (1.0 - currentGain) * releaseCoefficient
+                targetGain - (targetGain - currentGain) * releaseCoefficient
             }
 
             for (channel in 0 until channelCount) {
