@@ -58,3 +58,11 @@ A device that rejects session 0 will still be able to use the software DSP in GG
 - Media library browsing, metadata, album art and queue management improvements.
 - Additional DSP effects such as a tested limiter and optional dynamics controls.
 - Physical-device latency, battery, thermal and audio-route tests.
+
+## External app sessions
+
+- GG Audio listens for Android's standard open/close audio-effect control-session broadcasts while its MediaSessionService process is running.
+- When a supported player publishes both its package name and a positive audio-session ID, GG Audio attempts to attach Equalizer, BassBoost and Virtualizer insert effects to that exact session.
+- On Android 14+, the broadcast's sender package is checked against the package name extra. The receiver also requires the sender to hold MODIFY_AUDIO_SETTINGS.
+- Effect control is device/player dependent. Players that do not publish the standard session broadcasts, and devices that deny control, remain unsupported by this path.
+- External sessions currently use the active GG Audio EQ/effect values. Independent per-app saved profiles and reliable background-service persistence remain future work.

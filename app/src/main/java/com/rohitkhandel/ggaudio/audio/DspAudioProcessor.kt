@@ -58,6 +58,22 @@ class DspSettingsStore(
 object PlaybackDspSettings {
     val store = DspSettingsStore(EqualizerDefaults.balanced(), 0f)
 
+    @Volatile
+    private var externalSessionEffects: AppAudioSessionEffects? = null
+
+    @Synchronized
+    fun attachExternalSessionEffects(controller: AppAudioSessionEffects) {
+        externalSessionEffects = controller
+        controller.updateSettings(store.snapshot())
+    }
+
+    @Synchronized
+    fun detachExternalSessionEffects(controller: AppAudioSessionEffects) {
+        if (externalSessionEffects === controller) {
+            externalSessionEffects = null
+        }
+    }
+
     fun update(
         bands: List<EqualizerBand>,
         preampDb: Float,
@@ -65,6 +81,7 @@ object PlaybackDspSettings {
         stereoWidthPercent: Int = 0
     ) {
         store.update(bands, preampDb, bassBoostPercent, stereoWidthPercent)
+        externalSessionEffects?.updateSettings(store.snapshot())
     }
 }
 
