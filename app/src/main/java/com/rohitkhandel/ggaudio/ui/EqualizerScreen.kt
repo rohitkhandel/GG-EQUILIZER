@@ -80,7 +80,7 @@ fun EqualizerScreen(
             }
             Text("✦  MANAGE", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp))
         }
-        Surface(Modifier.fillMaxWidth(), color = Surface, shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Outline)) {
+        Surface(Modifier.fillMaxWidth(), color = CardSurface, shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Outline)) {
             Column(Modifier.padding(13.dp)) {
                 Text("FREQUENCY RESPONSE", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold)
                 Text(presetName.uppercase() + "  ·  PREVIEW CURVE", color = TextPrimary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
@@ -90,7 +90,7 @@ fun EqualizerScreen(
                 }
             }
         }
-        Surface(Modifier.fillMaxWidth().padding(top = 11.dp), color = Surface, shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Outline)) {
+        Surface(Modifier.fillMaxWidth().padding(top = 11.dp), color = CardSurface, shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Outline)) {
             Column(Modifier.padding(horizontal = 11.dp, vertical = 13.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Column {
@@ -111,7 +111,7 @@ fun EqualizerScreen(
                 }
             }
         }
-        Surface(Modifier.fillMaxWidth().padding(top = 11.dp, bottom = 18.dp), color = Surface, shape = RoundedCornerShape(12.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Outline)) {
+        Surface(Modifier.fillMaxWidth().padding(top = 11.dp, bottom = 18.dp), color = CardSurface, shape = RoundedCornerShape(12.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Outline)) {
             Column(Modifier.padding(13.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("OUTPUT LEVEL  ·  PREAMP", color = TextMuted, fontSize = 8.sp, fontWeight = FontWeight.Bold)
@@ -168,7 +168,7 @@ private fun VerticalBandControl(band: EqualizerBand, modifier: Modifier = Modifi
                 .pointerInput(band.gainDb) {
                     detectTapGestures { point ->
                         val next = (1f - point.y / size.height) * 24f - 12f
-                        onValueChange((next * 2f).toInt() / 2f)
+                        onValueChange(((next * 2f).toInt() / 2f).coerceIn(-12f, 12f))
                     }
                 }
         ) {
