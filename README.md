@@ -20,6 +20,7 @@ A private, offline-first native Android equalizer with an optional local audio t
 - The now-playing panel, queue and media-session metadata show embedded artist/album tags when available.
 - Legacy Android global Equalizer route (session 0), retained only as a device-dependent fallback.
 - Session-bound Equalizer, BassBoost and Virtualizer routing for compatible players that broadcast Android's standard audio-effect session open/close actions; active package names appear in Settings.
+- Independent per-app EQ profiles persist each supported package's 10 bands, preamp, Bass Boost and Stereo Width in on-device DataStore and are selected by package name at session time.
 - Custom equalizer presets can be saved, applied and deleted using on-device DataStore storage.
 - Active EQ curve, preamp, and optional effect levels are restored and saved automatically on-device.
 - The local playback queue, selected track and last position are restored from on-device storage; playback does not auto-start.
@@ -56,7 +57,7 @@ Run gradle --no-daemon assembleDebug and gradle --no-daemon testDebugUnitTest fr
 
 ## Planned next work
 
-- Independent saved equalizer/effect profiles for each supported external app.
+- Test per-app profile switching with two compatible players on the target phone.
 - Verify session-broadcast compatibility and control ownership on the target phone.
 - Physical-device audio checks, then CPU, latency and battery tuning.
 - Secondary local-player library improvements after the equalizer engine is stable.

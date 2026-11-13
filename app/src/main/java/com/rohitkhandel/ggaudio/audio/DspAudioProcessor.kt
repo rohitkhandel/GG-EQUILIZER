@@ -61,10 +61,13 @@ object PlaybackDspSettings {
     @Volatile
     private var externalSessionEffects: AppAudioSessionEffects? = null
 
+    @Volatile
+    private var externalAppProfiles: Map<String, DspSettingsSnapshot> = emptyMap()
+
     @Synchronized
     fun attachExternalSessionEffects(controller: AppAudioSessionEffects) {
         externalSessionEffects = controller
-        controller.updateSettings(store.snapshot())
+        controller.updateSettings(store.snapshot(), externalAppProfiles)
     }
 
     @Synchronized
@@ -74,6 +77,13 @@ object PlaybackDspSettings {
         }
     }
 
+    fun updateExternalAppProfiles(profiles: Map<String, DspSettingsSnapshot>) {
+        externalAppProfiles = profiles.mapValues { (_, profile) ->
+            profile.copy(bands = profile.bands.toList())
+        }
+        externalSessionEffects?.updateSettings(store.snapshot(), externalAppProfiles)
+    }
+
     fun update(
         bands: List<EqualizerBand>,
         preampDb: Float,
@@ -81,7 +91,7 @@ object PlaybackDspSettings {
         stereoWidthPercent: Int = 0
     ) {
         store.update(bands, preampDb, bassBoostPercent, stereoWidthPercent)
-        externalSessionEffects?.updateSettings(store.snapshot())
+        externalSessionEffects?.updateSettings(store.snapshot(), externalAppProfiles)
     }
 }
 

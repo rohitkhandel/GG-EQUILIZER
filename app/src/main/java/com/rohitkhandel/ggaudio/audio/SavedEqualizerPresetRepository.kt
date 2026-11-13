@@ -21,6 +21,7 @@ private val Context.ggAudioPresetDataStore by preferencesDataStore(
 private val PRESETS_JSON = stringPreferencesKey("custom_equalizer_presets")
 private val ACTIVE_SETTINGS_JSON = stringPreferencesKey("active_audio_settings_json")
 private val PLAYBACK_QUEUE_JSON = stringPreferencesKey("playback_queue_json")
+private val APP_PROFILES_JSON = stringPreferencesKey("app_equalizer_profiles_json")
 
 class SavedEqualizerPresetRepository(context: Context) {
     private val dataStore = context.applicationContext.ggAudioPresetDataStore
@@ -46,6 +47,13 @@ class SavedEqualizerPresetRepository(context: Context) {
         .map { preferences -> PlaybackQueueJsonCodec.decode(preferences[PLAYBACK_QUEUE_JSON].orEmpty()) }
         .distinctUntilChanged()
 
+    val appProfiles: Flow<List<AppEqualizerProfile>> = dataStore.data
+        .catch { error ->
+            if (error is IOException) emit(emptyPreferences()) else throw error
+        }
+        .map { preferences -> AppEqualizerProfileJsonCodec.decode(preferences[APP_PROFILES_JSON].orEmpty()) }
+        .distinctUntilChanged()
+
     suspend fun saveSettings(settings: AudioSettingsSnapshot) {
         dataStore.edit { preferences ->
             preferences[ACTIVE_SETTINGS_JSON] = AudioSettingsJsonCodec.encode(settings)
@@ -55,6 +63,24 @@ class SavedEqualizerPresetRepository(context: Context) {
     suspend fun savePlaybackQueue(snapshot: PlaybackQueueSnapshot) {
         dataStore.edit { preferences ->
             preferences[PLAYBACK_QUEUE_JSON] = PlaybackQueueJsonCodec.encode(snapshot)
+        }
+    }
+
+    suspend fun saveAppProfile(profile: AppEqualizerProfile) {
+        dataStore.edit { preferences ->
+            val current = AppEqualizerProfileJsonCodec.decode(preferences[APP_PROFILES_JSON].orEmpty())
+            val updated = current.filterNot { it.packageName == profile.packageName } + profile
+            preferences[APP_PROFILES_JSON] = AppEqualizerProfileJsonCodec.encode(updated)
+        }
+    }
+
+    suspend fun deleteAppProfile(packageName: String) {
+        require(packageName.isNotBlank()) { "Package name cannot be blank." }
+        dataStore.edit { preferences ->
+            val current = AppEqualizerProfileJsonCodec.decode(preferences[APP_PROFILES_JSON].orEmpty())
+            preferences[APP_PROFILES_JSON] = AppEqualizerProfileJsonCodec.encode(
+                current.filterNot { it.packageName == packageName }
+            )
         }
     }
 

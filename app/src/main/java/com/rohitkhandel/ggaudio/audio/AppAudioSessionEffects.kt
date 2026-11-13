@@ -45,7 +45,10 @@ class AppAudioSessionEffects(
     private val sessions = mutableMapOf<Int, ActiveSession>()
 
     @Volatile
-    private var latestSettings = initialSettings
+    private var latestSettings = initialSettings.copy(bands = initialSettings.bands.toList())
+
+    @Volatile
+    private var appProfiles: Map<String, DspSettingsSnapshot> = emptyMap()
 
     @Volatile
     private var disposed = false
@@ -55,7 +58,7 @@ class AppAudioSessionEffects(
         dispatch {
             val previous = sessions[sessionId]
             if (previous?.packageName == packageName) {
-                applySettings(previous, latestSettings)
+                applySettings(previous, settingsFor(packageName))
                 return@dispatch
             }
             if (previous != null) {
@@ -86,7 +89,7 @@ class AppAudioSessionEffects(
             )
             sessions[sessionId] = active
             publishActivePackages()
-            applySettings(active, latestSettings)
+            applySettings(active, settingsFor(packageName))
         }
     }
 
@@ -102,14 +105,23 @@ class AppAudioSessionEffects(
         }
     }
 
-    fun updateSettings(settings: DspSettingsSnapshot) {
+    fun updateSettings(
+        settings: DspSettingsSnapshot,
+        profiles: Map<String, DspSettingsSnapshot> = appProfiles
+    ) {
         latestSettings = settings.copy(bands = settings.bands.toList())
+        appProfiles = profiles.mapValues { (_, profile) ->
+            profile.copy(bands = profile.bands.toList())
+        }
         dispatch {
             sessions.values.toList().forEach { active ->
-                applySettings(active, latestSettings)
+                applySettings(active, settingsFor(active.packageName))
             }
         }
     }
+
+    private fun settingsFor(packageName: String): DspSettingsSnapshot =
+        AppEqualizerProfileResolver.resolve(packageName, latestSettings, appProfiles)
 
     private fun applySettings(active: ActiveSession, settings: DspSettingsSnapshot) {
         runCatching {
