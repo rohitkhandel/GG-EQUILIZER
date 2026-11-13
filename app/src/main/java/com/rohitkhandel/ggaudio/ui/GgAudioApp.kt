@@ -1095,7 +1095,7 @@ private fun SettingsScreen(
 ) {
     var appMenuOpen by remember { mutableStateOf(false) }
     val appOptions = remember(activeExternalAudioApps, savedAppProfiles) {
-        (activeExternalAudioApps + savedAppProfiles.map { it.packageName }).distinct().sorted()
+        (activeExternalAudioApps + trackedMediaPlayers + savedAppProfiles.map { it.packageName }).distinct().sorted()
     }
     val selectedPackage = selectedAppPackage?.takeIf { it in appOptions } ?: appOptions.firstOrNull()
     val selectedProfile = savedAppProfiles.firstOrNull { it.packageName == selectedPackage }
@@ -1219,7 +1219,7 @@ private fun SettingsScreen(
                                         Column {
                                             Text(packageName, fontSize = 10.sp)
                                             Text(
-                                                if (packageName in activeExternalAudioApps) "ACTIVE SESSION" else "SAVED PROFILE",
+                                                when { packageName in activeExternalAudioApps -> "AUDIO EFFECT SESSION ATTACHED"; packageName in trackedMediaPlayers -> "MEDIA PLAYING · EFFECT NOT ATTACHED"; else -> "SAVED PROFILE" },
                                                 color = TextMuted,
                                                 fontSize = 8.sp
                                             )
@@ -1235,8 +1235,12 @@ private fun SettingsScreen(
                     }
                     if (selectedPackage != null) {
                         DiagnosticRow(
-                            "Session status",
-                            if (selectedPackage in activeExternalAudioApps) "ACTIVE NOW" else "NOT PLAYING"
+                            "Audio effect session",
+                            if (selectedPackage in activeExternalAudioApps) "ATTACHED" else "NOT ATTACHED"
+                        )
+                        DiagnosticRow(
+                            "Media player",
+                            if (selectedPackage in trackedMediaPlayers) "PLAYING" else "NOT DETECTED"
                         )
                         DiagnosticRow(
                             "Saved profile",
