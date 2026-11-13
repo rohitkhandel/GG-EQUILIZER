@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import com.rohitkhandel.ggaudio.audio.EqualizerBand
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
 import com.rohitkhandel.ggaudio.ui.theme.*
+import com.rohitkhandel.ggaudio.ui.theme.Surface as CardSurface
 
 private val profiles = mapOf(
     "Balanced" to listOf(2f,3f,2f,1f,0f,-1f,0f,1f,2f,1f),
@@ -57,14 +58,14 @@ fun EqualizerScreen(
                 Text("Shape your sound with precision.", color = TextMuted, fontSize = 11.sp)
             }
             Text("RESET", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Surface).padding(horizontal = 12.dp, vertical = 9.dp)
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(CardSurface).padding(horizontal = 12.dp, vertical = 9.dp)
                     .pointerInput(Unit) { detectTapGestures { onPresetChange("Flat", EqualizerDefaults.flat()) } })
         }
         Row(Modifier.fillMaxWidth().padding(bottom = 11.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.SpaceBetween) {
             Column {
                 Text("CURRENT PRESET", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold)
                 Box {
-                    Surface(onClick = { menuOpen = true }, color = Surface, shape = RoundedCornerShape(9.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Outline)) {
+                    Surface(onClick = { menuOpen = true }, color = CardSurface, shape = RoundedCornerShape(9.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Outline)) {
                         Text(presetName + "  ▾", color = TextPrimary, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp))
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -161,7 +162,7 @@ private fun VerticalBandControl(band: EqualizerBand, modifier: Modifier = Modifi
                 .pointerInput(band.gainDb) {
                     detectDragGestures { change, _ ->
                         val next = (1f - change.position.y / size.height) * 24f - 12f
-                        onValueChange((next * 2f).toInt() / 2f)
+                        onValueChange(((next * 2f).toInt() / 2f).coerceIn(-12f, 12f))
                     }
                 }
                 .pointerInput(band.gainDb) {
