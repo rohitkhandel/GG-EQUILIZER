@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -40,6 +42,7 @@ import com.rohitkhandel.ggaudio.audio.AudioBackendStatus
 import com.rohitkhandel.ggaudio.audio.AudioMetadataReader
 import com.rohitkhandel.ggaudio.audio.AudioSettingsSnapshot
 import com.rohitkhandel.ggaudio.audio.AppAudioSessionStatus
+import com.rohitkhandel.ggaudio.audio.AppEqualizerProfile
 import com.rohitkhandel.ggaudio.audio.EqualizerBand
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
 import com.rohitkhandel.ggaudio.audio.GlobalAudioEffectsController
@@ -104,6 +107,7 @@ fun GgAudioApp() {
     val activeExternalAudioApps by AppAudioSessionStatus.activePackages.collectAsState()
     val presetRepository = remember(context) { SavedEqualizerPresetRepository(context) }
     val savedPresets by presetRepository.presets.collectAsState(initial = emptyList())
+    val savedAppProfiles by presetRepository.appProfiles.collectAsState(initial = emptyList())
     val presetScope = rememberCoroutineScope()
 
     LaunchedEffect(presetRepository) {
@@ -148,6 +152,12 @@ fun GgAudioApp() {
         } finally {
             queueRestored = true
         }
+    }
+
+    LaunchedEffect(savedAppProfiles) {
+        PlaybackDspSettings.updateExternalAppProfiles(
+            savedAppProfiles.associate { it.packageName to it.toDspSettings() }
+        )
     }
 
     LaunchedEffect(settingsLoaded, bands, presetName, preamp, bassStrength, virtualizerStrength) {
@@ -579,7 +589,49 @@ fun GgAudioApp() {
                         }
                     }
                 )
-                AppTab.Settings -> SettingsScreen(backendStatus, settingsStatus, activeExternalAudioApps)
+                AppTab.Settings -> SettingsScreen(
+                    status = backendStatus,
+                    settingsStatus = settingsStatus,
+                    activeExternalAudioApps = activeExternalAudioApps,
+                    savedAppProfiles = savedAppProfiles,
+                    onSaveAppProfile = { packageName ->
+                        presetScope.launch {
+                            try {
+                                presetRepository.saveAppProfile(
+                                    AppEqualizerProfile.fromCurrentSettings(
+                                        packageName = packageName,
+                                        bands = bands,
+                                        preampDb = preamp,
+                                        bassBoostPercent = bassStrength.toInt().coerceIn(0, 100),
+                                        stereoWidthPercent = virtualizerStrength.toInt().coerceIn(0, 100)
+                                    )
+                                )
+                                presetMessage = "Saved app profile for $packageName."
+                            } catch (error: Exception) {
+                                presetMessage = error.message ?: "Could not save this app profile."
+                            }
+                        }
+                    },
+                    onDeleteAppProfile = { packageName ->
+                        presetScope.launch {
+                            try {
+                                presetRepository.deleteAppProfile(packageName)
+                                presetMessage = "Removed app profile for $packageName."
+                            } catch (error: Exception) {
+                                presetMessage = error.message ?: "Could not remove this app profile."
+                            }
+                        }
+                    },
+                    onLoadAppProfile = { profile ->
+                        val settings = profile.toDspSettings()
+                        bands = settings.bands
+                        preamp = settings.preampDb
+                        bassStrength = settings.bassBoostPercent.toFloat()
+                        virtualizerStrength = settings.stereoWidthPercent.toFloat()
+                        presetName = "App profile"
+                        selectedTab = AppTab.Equalizer
+                    }
+                )
             }
         }
     }
@@ -1026,9 +1078,30 @@ private fun EffectControl(
 private fun SettingsScreen(
     status: AudioBackendStatus,
     settingsStatus: String,
-    activeExternalAudioApps: Set<String>
+    activeExternalAudioApps: Set<String>,
+    savedAppProfiles: List<AppEqualizerProfile>,
+    onSaveAppProfile: (String) -> Unit,
+    onDeleteAppProfile: (String) -> Unit,
+    onLoadAppProfile: (AppEqualizerProfile) -> Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(22.dp)) {
+    var selectedAppPackage by remember { mutableStateOf<String?>(null) }
+    var appMenuOpen by remember { mutableStateOf(false) }
+    val appOptions = remember(activeExternalAudioApps, savedAppProfiles) {
+        (activeExternalAudioApps + savedAppProfiles.map { it.packageName }).distinct().sorted()
+    }
+    val selectedPackage = selectedAppPackage?.takeIf { it in appOptions } ?: appOptions.firstOrNull()
+    val selectedProfile = savedAppProfiles.firstOrNull { it.packageName == selectedPackage }
+    val context = LocalContext.current
+    val selectedAppLabel = remember(context, selectedPackage) {
+        selectedPackage?.let { packageName ->
+            runCatching {
+                val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
+                context.packageManager.getApplicationLabel(appInfo).toString()
+            }.getOrDefault(packageName)
+        }
+    }
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(22.dp)) {
         Text("SYSTEM DIAGNOSTICS", color = Accent, fontSize = 9.sp, letterSpacing = 1.5.sp)
         Text("Settings", color = TextPrimary, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
         Surface(
@@ -1056,6 +1129,125 @@ private fun SettingsScreen(
                 DiagnosticRow("BassBoost", if (status.bassBoostAvailable) "AVAILABLE" else "NOT AVAILABLE")
                 DiagnosticRow("Virtualizer", if (status.virtualizerAvailable) "AVAILABLE" else "NOT AVAILABLE")
                 Text(status.message, color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 12.dp))
+            }
+        }
+        Surface(
+            Modifier.fillMaxWidth().padding(top = 12.dp),
+            color = CardSurface,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Outline)
+        ) {
+            Column(Modifier.padding(15.dp)) {
+                Text("PER-APP EQUALIZER PROFILES", color = Accent, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                Text(
+                    "Each compatible player can keep its own 10-band EQ, Preamp, Bass Boost and Stereo Width.",
+                    color = TextMuted,
+                    fontSize = 9.sp,
+                    lineHeight = 13.sp,
+                    modifier = Modifier.padding(top = 7.dp)
+                )
+                if (appOptions.isEmpty()) {
+                    Text(
+                        "No supported app session detected yet. Start playback in a player that publishes an Android audio-effect session, then return here.",
+                        color = TextMuted,
+                        fontSize = 9.sp,
+                        lineHeight = 13.sp,
+                        modifier = Modifier.padding(top = 9.dp)
+                    )
+                } else {
+                    Box(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                        Surface(
+                            onClick = { appMenuOpen = true },
+                            color = Color(0xFF111815),
+                            shape = RoundedCornerShape(7.dp),
+                            border = BorderStroke(1.dp, Outline)
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp)) {
+                                Text(selectedAppLabel ?: selectedPackage.orEmpty(), color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text(selectedPackage.orEmpty(), color = TextMuted, fontSize = 8.sp, modifier = Modifier.padding(top = 3.dp))
+                            }
+                        }
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = appMenuOpen,
+                            onDismissRequest = { appMenuOpen = false }
+                        ) {
+                            appOptions.forEach { packageName ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(packageName, fontSize = 10.sp)
+                                            Text(
+                                                if (packageName in activeExternalAudioApps) "ACTIVE SESSION" else "SAVED PROFILE",
+                                                color = TextMuted,
+                                                fontSize = 8.sp
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedAppPackage = packageName
+                                        appMenuOpen = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    if (selectedPackage != null) {
+                        DiagnosticRow(
+                            "Session status",
+                            if (selectedPackage in activeExternalAudioApps) "ACTIVE NOW" else "NOT PLAYING"
+                        )
+                        DiagnosticRow(
+                            "Saved profile",
+                            if (selectedProfile == null) "NOT SAVED" else "ON THIS PHONE"
+                        )
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 7.dp),
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = { onSaveAppProfile(selectedPackage) },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    if (selectedProfile == null) "SAVE CURRENT EQ" else "UPDATE PROFILE",
+                                    color = Accent,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+                            if (selectedProfile != null) {
+                                TextButton(
+                                    onClick = { onLoadAppProfile(selectedProfile) },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("EDIT / LOAD", color = Success, fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                }
+                                TextButton(onClick = { onDeleteAppProfile(selectedPackage) }) {
+                                    Text("DELETE", color = Color(0xFFE69B8F), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        if (selectedProfile != null) {
+                            Text(
+                                "Load this profile to edit its curve, then update the same app profile. Other apps keep their saved settings.",
+                                color = TextMuted,
+                                fontSize = 8.sp,
+                                lineHeight = 12.sp,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        } else {
+                            Text(
+                                "Save the current Equalizer screen values for this app. Its profile will be stored separately from other players.",
+                                color = TextMuted,
+                                fontSize = 8.sp,
+                                lineHeight = 12.sp,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
         Surface(
