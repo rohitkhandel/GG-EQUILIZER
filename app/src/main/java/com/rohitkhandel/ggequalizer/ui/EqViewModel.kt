@@ -163,7 +163,10 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setBandFilterType(index: Int, filterType: Int) {
-        updateBand(index) { it.copy(filterType = filterType.coerceIn(0, 2), enabled = true) }
+        updateBand(index) { it.copy(filterType = filterType.coerceIn(
+                NativeDspBridge.FILTER_PEAKING,
+                NativeDspBridge.FILTER_BAND_PASS
+            ), enabled = true) }
     }
 
     fun setBandEnabled(index: Int, enabled: Boolean) {
