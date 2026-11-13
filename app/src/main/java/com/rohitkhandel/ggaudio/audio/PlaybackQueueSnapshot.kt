@@ -8,7 +8,10 @@ import kotlinx.serialization.json.Json
 @Serializable
 data class PlaybackQueueTrack(
     val uri: String,
-    val title: String
+    val title: String,
+    val artist: String? = null,
+    val album: String? = null,
+    val durationMs: Long? = null
 ) {
     init {
         require(uri.startsWith("content://") || uri.startsWith("file://")) {
@@ -16,6 +19,15 @@ data class PlaybackQueueTrack(
         }
         require(title.isNotBlank() && title.length <= 512) {
             "Track title must contain 1 to 512 characters."
+        }
+        require(artist == null || artist.length <= 256) {
+            "Artist name cannot exceed 256 characters."
+        }
+        require(album == null || album.length <= 256) {
+            "Album name cannot exceed 256 characters."
+        }
+        require(durationMs == null || durationMs >= 0L) {
+            "Track duration cannot be negative."
         }
     }
 }
