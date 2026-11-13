@@ -1,6 +1,7 @@
 package com.rohitkhandel.ggaudio.audio
 
 import android.media.session.MediaController
+import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -28,7 +29,7 @@ object MediaPlayerTrackingStatus {
 class GgMediaSessionListenerService : NotificationListenerService() {
 
     private val sessionsListener =
-        MediaController.OnActiveSessionsChangedListener { controllers ->
+        MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
             publishPlayingPackages(controllers.orEmpty())
         }
 
