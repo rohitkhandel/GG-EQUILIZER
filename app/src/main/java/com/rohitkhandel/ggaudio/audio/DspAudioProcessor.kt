@@ -83,7 +83,7 @@ class DspAudioProcessor(
         val output = replaceOutputBuffer(byteCount).order(ByteOrder.nativeOrder())
         for (index in 0 until sampleCount) {
             val sample = scratch[index].coerceIn(-1f, 1f)
-            val pcm16 = (sample * 32767f).roundToInt().coerceIn(-32768, 32767)
+            val pcm16 = (sample * 32768f).roundToInt().coerceIn(-32768, 32767)
             output.putShort(pcm16.toShort())
         }
         output.flip()
