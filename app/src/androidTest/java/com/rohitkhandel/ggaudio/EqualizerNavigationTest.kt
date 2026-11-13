@@ -1,6 +1,5 @@
 package com.rohitkhandel.ggaudio
 
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -19,7 +18,7 @@ class EqualizerNavigationTest {
 
     @Test
     fun homeRendersTenBandControls() {
-        composeRule.onNodeWithText("Equalizer").assertExists()
+        composeRule.onNodeWithText("Equalizer").fetchSemanticsNode()
         composeRule.onNodeWithContentDescription("31 Hz gain").assertExists()
         composeRule.onNodeWithContentDescription("16K Hz gain").assertExists()
     }
