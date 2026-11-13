@@ -61,7 +61,8 @@ class AndroidSessionEffectTest {
                 "Route should report DynamicsProcessing, legacy EQ, or no compatible effect",
                 route in setOf(
                     "dynamics · 32-zone EQ",
-                    "legacy graphic EQ"
+                    "legacy graphic EQ",
+                    "session observed; no compatible effect"
                 )
             )
         } finally {
