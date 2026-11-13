@@ -931,6 +931,7 @@ private fun LocalPlayerScreen(
                 Text("PROCESSING CHAIN", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold)
                 DiagnosticRow("10-band peaking EQ", "ENABLED")
                 DiagnosticRow("Software preamp", "ENABLED")
+                DiagnosticRow("Peak limiter", "-1 dBFS")
                 DiagnosticRow("PCM format", "16-bit")
                 Text(
                     "These controls process audio played inside GG Audio. They do not capture or modify unrelated apps.",
