@@ -141,7 +141,7 @@ class GlobalAudioEffectsController : Closeable {
     private fun <T : AudioEffect> createOptionalEffect(factory: () -> T): T? {
         return try {
             factory().also { effect ->
-                if (!effect.hasControl()()) {
+                if (!effect.hasControl()) {
                     effect.release()
                 } else {
                     effect.enabled = false
