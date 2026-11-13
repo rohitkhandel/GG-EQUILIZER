@@ -6,6 +6,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertEquals
+import androidx.lifecycle.ViewModelProvider
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,4 +34,25 @@ class EqualizerNavigationTest {
             )
         }
     }
+    @Test
+    fun parametricEditorCanSelectAllSixFilterTypes() {
+        val vm = ViewModelProvider(composeRule.activity)[com.rohitkhandel.ggequalizer.ui.EqViewModel::class.java]
+        vm.setBandCount(32)
+        vm.setBandFilterType(0, com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_LOW_PASS)
+        assertEquals(
+            com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_LOW_PASS,
+            vm.uiState.value.bands[0].filterType
+        )
+        vm.setBandFilterType(0, com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_HIGH_PASS)
+        assertEquals(
+            com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_HIGH_PASS,
+            vm.uiState.value.bands[0].filterType
+        )
+        vm.setBandFilterType(0, com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_BAND_PASS)
+        assertEquals(
+            com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_BAND_PASS,
+            vm.uiState.value.bands[0].filterType
+        )
+    }
+
 }
