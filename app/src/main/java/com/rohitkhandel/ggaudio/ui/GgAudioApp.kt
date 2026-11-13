@@ -13,14 +13,17 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
@@ -31,14 +34,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rohitkhandel.ggaudio.audio.AudioBackendStatus
+import com.rohitkhandel.ggaudio.audio.EqualizerBand
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
 import com.rohitkhandel.ggaudio.audio.GlobalAudioEffectsController
 import com.rohitkhandel.ggaudio.audio.LocalAudioFile
 import com.rohitkhandel.ggaudio.audio.LocalAudioPlayer
+import com.rohitkhandel.ggaudio.audio.EqualizerPresetLibrary
+import com.rohitkhandel.ggaudio.audio.SavedEqualizerPreset
+import com.rohitkhandel.ggaudio.audio.SavedEqualizerPresetRepository
 import com.rohitkhandel.ggaudio.audio.formatPlaybackTime
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.rohitkhandel.ggaudio.ui.theme.*
 import com.rohitkhandel.ggaudio.ui.theme.Surface as CardSurface
 
@@ -66,8 +74,12 @@ fun GgAudioApp() {
     var playbackPositionMs by remember { mutableLongStateOf(0L) }
     var playbackDurationMs by remember { mutableLongStateOf(0L) }
     var playbackError by remember { mutableStateOf<String?>(null) }
+    var presetMessage by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
+    val presetRepository = remember(context) { SavedEqualizerPresetRepository(context) }
+    val savedPresets by presetRepository.presets.collectAsState(initial = emptyList())
+    val presetScope = rememberCoroutineScope()
     val localPlayer = remember(context) { LocalAudioPlayer(context) }
     val audioPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
@@ -221,9 +233,12 @@ fun GgAudioApp() {
                         bands = bands.mapIndexed { i, band -> if (i == index) band.copy(gainDb = value) else band }
                         presetName = "Custom"
                     },
-                    onPresetChange = { name, updated ->
+                    savedPresets = savedPresets,
+                    onManagePresets = { selectedTab = AppTab.Presets },
+                    onPresetChange = { name, updated, updatedPreamp ->
                         presetName = name
                         bands = updated
+                        preamp = updatedPreamp
                     }
                 )
                 AppTab.Player -> LocalPlayerScreen(
@@ -256,9 +271,39 @@ fun GgAudioApp() {
                     onBassChange = { bassStrength = it },
                     onVirtualizerChange = { virtualizerStrength = it }
                 )
-                AppTab.Presets -> PlaceholderScreen(
-                    "Presets",
-                    "The built-in profiles are ready. Saving, importing and exporting custom presets is the next milestone."
+                AppTab.Presets -> PresetsScreen(
+                    currentPresetName = presetName,
+                    currentBands = bands,
+                    currentPreamp = preamp,
+                    savedPresets = savedPresets,
+                    message = presetMessage,
+                    onMessageDismiss = { presetMessage = null },
+                    onApplyPreset = { name, updatedBands, updatedPreamp ->
+                        presetName = name
+                        bands = updatedBands
+                        preamp = updatedPreamp
+                        selectedTab = AppTab.Equalizer
+                    },
+                    onSavePreset = { name ->
+                        presetScope.launch {
+                            presetMessage = try {
+                                val saved = presetRepository.savePreset(name, bands, preamp)
+                                "Saved ${saved.name}."
+                            } catch (error: Exception) {
+                                error.message ?: "Could not save this preset."
+                            }
+                        }
+                    },
+                    onDeletePreset = { id ->
+                        presetScope.launch {
+                            presetMessage = try {
+                                presetRepository.deletePreset(id)
+                                "Preset deleted."
+                            } catch (error: Exception) {
+                                error.message ?: "Could not delete this preset."
+                            }
+                        }
+                    }
                 )
                 AppTab.Settings -> SettingsScreen(backendStatus)
             }
@@ -682,6 +727,159 @@ private fun DiagnosticRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, color = TextMuted, fontSize = 10.sp)
         Text(value, color = TextPrimary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun PresetsScreen(
+    currentPresetName: String,
+    currentBands: List<EqualizerBand>,
+    currentPreamp: Float,
+    savedPresets: List<SavedEqualizerPreset>,
+    message: String?,
+    onMessageDismiss: () -> Unit,
+    onApplyPreset: (String, List<EqualizerBand>, Float) -> Unit,
+    onSavePreset: (String) -> Unit,
+    onDeletePreset: (String) -> Unit
+) {
+    var saveDialogOpen by remember { mutableStateOf(false) }
+    var presetNameInput by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<SavedEqualizerPreset?>(null) }
+    val duplicateName = presetNameInput.trim().let { candidate ->
+        candidate.isNotEmpty() && (
+            EqualizerPresetLibrary.reservedNames.contains(candidate.lowercase()) ||
+                savedPresets.any { it.name.equals(candidate, ignoreCase = true) }
+            )
+    }
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 18.dp)) {
+        Text("PERSONAL SOUND PROFILES", color = Accent, fontSize = 9.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
+        Text("Presets", color = TextPrimary, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
+        Text("Save your own 10-band curves on this phone.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+        Surface(
+            Modifier.fillMaxWidth().padding(top = 16.dp),
+            color = CardSurface,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Outline)
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Text("CURRENT EQUALIZER", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold)
+                Text(currentPresetName, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
+                Text("${currentBands.count { it.gainDb != 0f }} active bands  ·  Preamp ${if (currentPreamp >= 0f) "+" else ""}${"%.1f".format(currentPreamp)} dB", color = TextMuted, fontSize = 9.sp, modifier = Modifier.padding(top = 2.dp))
+                Button(
+                    onClick = { presetNameInput = ""; saveDialogOpen = true },
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF633D25), contentColor = Color(0xFFFFC18B)),
+                    shape = RoundedCornerShape(9.dp)
+                ) {
+                    Text("SAVE CURRENT PRESET", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        if (message != null) {
+            Text(message, color = if (message.startsWith("Saved")) Success else TextMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 10.dp).clickable(onClick = onMessageDismiss))
+        }
+        Text("BUILT-IN PROFILES", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 18.dp, bottom = 7.dp))
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            items(EqualizerPresetLibrary.builtIn, key = { it.name }) { preset ->
+                Surface(
+                    onClick = { onApplyPreset(preset.name, preset.toBands(), 0f) },
+                    color = CardSurface,
+                    shape = RoundedCornerShape(11.dp),
+                    border = BorderStroke(1.dp, if (currentPresetName == preset.name) Accent else Outline)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(preset.name, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(if (currentPresetName == preset.name) "CURRENT PROFILE" else "10-BAND PROFILE", color = TextMuted, fontSize = 8.sp, modifier = Modifier.padding(top = 2.dp))
+                        }
+                        Text("APPLY  ›", color = Accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            if (savedPresets.isNotEmpty()) {
+                item {
+                    Text("MY SAVED PROFILES", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp, bottom = 1.dp))
+                }
+                items(savedPresets, key = { it.id }) { preset ->
+                    Surface(
+                        color = CardSurface,
+                        shape = RoundedCornerShape(11.dp),
+                        border = BorderStroke(1.dp, if (currentPresetName == preset.name) Accent else Outline)
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(start = 13.dp, end = 7.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f).clickable { onApplyPreset(preset.name, preset.toBands(), preset.preampDb) }.padding(vertical = 3.dp)) {
+                                Text(preset.name, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "PREAMP ${if (preset.preampDb >= 0f) "+" else ""}${"%.1f".format(preset.preampDb)} dB",
+                                    color = TextMuted,
+                                    fontSize = 8.sp,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                            TextButton(onClick = { deleteTarget = preset }) {
+                                Text("DELETE", color = Color(0xFFE69B8F), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (saveDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { saveDialogOpen = false },
+            title = { Text("Save equalizer preset") },
+            text = {
+                Column {
+                    Text("Give this sound profile a name. It will be stored only on this device.", fontSize = 12.sp)
+                    OutlinedTextField(
+                        value = presetNameInput,
+                        onValueChange = { if (it.length <= 32) presetNameInput = it },
+                        singleLine = true,
+                        label = { Text("Preset name") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                    if (duplicateName) {
+                        Text("This name is already in use.", color = Color(0xFFE69B8F), fontSize = 10.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onSavePreset(presetNameInput)
+                        saveDialogOpen = false
+                    },
+                    enabled = presetNameInput.trim().isNotEmpty() && !duplicateName
+                ) {
+                    Text("SAVE")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { saveDialogOpen = false }) { Text("CANCEL") }
+            }
+        )
+    }
+
+    deleteTarget?.let { preset ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete preset?") },
+            text = { Text("Remove ${preset.name} from this device?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeletePreset(preset.id)
+                        deleteTarget = null
+                    }
+                ) { Text("DELETE", color = Color(0xFFE69B8F)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("CANCEL") }
+            }
+        )
     }
 }
 

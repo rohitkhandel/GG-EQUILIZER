@@ -14,6 +14,7 @@ A private, offline-first native Android audio player and equalizer. The goal is 
 - Multi-file playback queue with track selection, previous/next, play/pause, stop and seek.
 - Track titles are read from the selected document provider.
 - Optional Android global Equalizer, BassBoost and Virtualizer adapter with device capability checks.
+- Custom equalizer presets can be saved, applied and deleted using on-device DataStore storage.
 - Local presets and playback are offline; the app does not upload audio.
 
 ## Important audio scope
@@ -45,7 +46,7 @@ Run gradle --no-daemon assembleDebug and gradle --no-daemon testDebugUnitTest fr
 
 ## Planned next work
 
-- Persist custom presets and user settings on-device.
+- Persist active user settings and custom preset import/export.
 - Background playback, notification and lock-screen media controls.
 - More detailed now-playing metadata and library browsing.
 - Physical-device compatibility checks and performance tuning.

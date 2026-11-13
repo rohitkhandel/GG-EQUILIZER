@@ -2,6 +2,7 @@ package com.rohitkhandel.ggaudio.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -29,16 +30,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rohitkhandel.ggaudio.audio.EqualizerBand
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
+import com.rohitkhandel.ggaudio.audio.EqualizerPresetLibrary
+import com.rohitkhandel.ggaudio.audio.SavedEqualizerPreset
 import com.rohitkhandel.ggaudio.ui.theme.*
 import com.rohitkhandel.ggaudio.ui.theme.Surface as CardSurface
 
-private val profiles = mapOf(
-    "Balanced" to listOf(2f,3f,2f,1f,0f,-1f,0f,1f,2f,1f),
-    "Bass boost" to listOf(6f,5f,4f,2f,0f,-1f,0f,1f,1f,1f),
-    "Vocal" to listOf(-2f,-1f,0f,2f,4f,4f,3f,1f,0f,-1f),
-    "Treble" to listOf(-1f,0f,0f,-1f,0f,1f,2f,4f,5f,5f),
-    "Flat" to List(10) { 0f }
-)
+private val profiles = EqualizerPresetLibrary.builtIn.associate { it.name to it.gainsDb }
 
 @Composable
 fun EqualizerScreen(
@@ -47,7 +44,9 @@ fun EqualizerScreen(
     preamp: Float,
     onPreampChange: (Float) -> Unit,
     onBandChange: (Int, Float) -> Unit,
-    onPresetChange: (String, List<EqualizerBand>) -> Unit
+    savedPresets: List<SavedEqualizerPreset>,
+    onManagePresets: () -> Unit,
+    onPresetChange: (String, List<EqualizerBand>, Float) -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(Background).padding(horizontal = 18.dp)) {
@@ -59,7 +58,7 @@ fun EqualizerScreen(
             }
             Text("RESET", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(CardSurface).padding(horizontal = 12.dp, vertical = 9.dp)
-                    .pointerInput(Unit) { detectTapGestures { onPresetChange("Flat", EqualizerDefaults.flat()) } })
+                    .pointerInput(Unit) { detectTapGestures { onPresetChange("Flat", EqualizerDefaults.flat(), 0f) } })
         }
         Row(Modifier.fillMaxWidth().padding(bottom = 11.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.SpaceBetween) {
             Column {
@@ -72,13 +71,32 @@ fun EqualizerScreen(
                         profiles.forEach { (name, values) ->
                             DropdownMenuItem(text = { Text(name) }, onClick = {
                                 menuOpen = false
-                                onPresetChange(name, bands.mapIndexed { index, band -> band.copy(gainDb = values[index]) })
+                                onPresetChange(name, bands.mapIndexed { index, band -> band.copy(gainDb = values[index]) }, 0f)
                             })
+                        }
+                    }
+                    if (savedPresets.isNotEmpty()) {
+                        Text("SAVED PRESETS", color = TextMuted, fontSize = 8.sp, modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp))
+                        savedPresets.forEach { saved ->
+                            DropdownMenuItem(
+                                text = { Text(saved.name) },
+                                onClick = {
+                                    menuOpen = false
+                                    onPresetChange(saved.name, saved.toBands(), saved.preampDb)
+                                }
+                            )
                         }
                     }
                 }
             }
-            Text("✦  MANAGE", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp))
+            Text(
+                "✦  MANAGE",
+                color = Accent,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 10.dp).clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onManagePresets).padding(horizontal = 8.dp, vertical = 8.dp)
+            )
         }
         Surface(Modifier.fillMaxWidth(), color = CardSurface, shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Outline)) {
             Column(Modifier.padding(13.dp)) {
