@@ -14,7 +14,8 @@ A private, offline-first native Android audio player and equalizer. The goal is 
 - Media3 ExoPlayer is hosted in a MediaSessionService, so playback can continue outside the Activity.
 - System media-style notification and lock-screen transport controls are provided by Media3.
 - Multi-file playback queue with track selection, previous/next, play/pause, stop and seek.
-- Track titles are read from the selected document provider.
+- Embedded track title, artist, album and duration tags are read locally when available; filenames remain the fallback.
+- The now-playing panel, queue and media-session metadata show embedded artist/album tags when available.
 - Optional Android global Equalizer, BassBoost and Virtualizer adapter with device capability checks.
 - Custom equalizer presets can be saved, applied and deleted using on-device DataStore storage.
 - Active EQ curve, preamp, and optional effect levels are restored and saved automatically on-device.
