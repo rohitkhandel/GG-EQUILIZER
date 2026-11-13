@@ -102,6 +102,7 @@ fun GgAudioApp() {
     var mediaConnectionError by remember { mutableStateOf<String?>(null) }
     var queueRevision by remember { mutableIntStateOf(0) }
     var queueRestored by remember { mutableStateOf(false) }
+    var selectedAppProfilePackage by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val activeExternalAudioApps by AppAudioSessionStatus.activePackages.collectAsState()
@@ -594,6 +595,8 @@ fun GgAudioApp() {
                     settingsStatus = settingsStatus,
                     activeExternalAudioApps = activeExternalAudioApps,
                     savedAppProfiles = savedAppProfiles,
+                    selectedAppPackage = selectedAppProfilePackage,
+                    onSelectedAppPackageChange = { selectedAppProfilePackage = it },
                     onSaveAppProfile = { packageName ->
                         presetScope.launch {
                             try {
@@ -1080,11 +1083,12 @@ private fun SettingsScreen(
     settingsStatus: String,
     activeExternalAudioApps: Set<String>,
     savedAppProfiles: List<AppEqualizerProfile>,
+    selectedAppPackage: String?,
+    onSelectedAppPackageChange: (String?) -> Unit,
     onSaveAppProfile: (String) -> Unit,
     onDeleteAppProfile: (String) -> Unit,
     onLoadAppProfile: (AppEqualizerProfile) -> Unit
 ) {
-    var selectedAppPackage by remember { mutableStateOf<String?>(null) }
     var appMenuOpen by remember { mutableStateOf(false) }
     val appOptions = remember(activeExternalAudioApps, savedAppProfiles) {
         (activeExternalAudioApps + savedAppProfiles.map { it.packageName }).distinct().sorted()
@@ -1184,7 +1188,7 @@ private fun SettingsScreen(
                                         }
                                     },
                                     onClick = {
-                                        selectedAppPackage = packageName
+                                        onSelectedAppPackageChange(packageName)
                                         appMenuOpen = false
                                     }
                                 )

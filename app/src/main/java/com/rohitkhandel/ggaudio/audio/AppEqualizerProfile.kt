@@ -74,7 +74,6 @@ object AppEqualizerProfileJsonCodec {
         return runCatching {
             json.decodeFromString<List<AppEqualizerProfile>>(value)
                 .distinctBy { it.packageName }
-                .take(100)
         }.getOrDefault(emptyList())
     }
 }
