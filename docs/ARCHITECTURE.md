@@ -15,7 +15,7 @@
 2. **Domain** — ten equalizer bands, built-in profiles, preamp values and playback queue state.
 3. **Local playback** — Media3 ExoPlayer with Android's document picker and a queue of selected local audio files.
 4. **PCM adapter** — Media3 DspAudioProcessor accepts PCM16 buffers and applies GG Audio's software processor before playback.
-5. **Preset persistence** — AndroidX Preferences DataStore stores custom 10-band curves and preamp values locally; a version-tolerant JSON codec validates saved profiles.
+5. **Preset and settings persistence** — AndroidX Preferences DataStore stores custom 10-band curves plus active EQ, preamp and effect values locally; JSON codecs validate restored state.
 6. **DSP core** — ParametricEqualizerProcessor builds peaking biquad filters and processes interleaved floating-point samples per channel.
 7. **Android effects** — GlobalAudioEffectsController probes optional Android Equalizer, BassBoost and Virtualizer effects and reports whether the device granted control.
 8. **Tests** — JVM tests cover EQ defaults, gain bounds, PCM round-trip, tone boost/cut, channel separation, preamp and playback-time formatting.
@@ -49,7 +49,7 @@ A device that rejects session 0 will still be able to use the software DSP in GG
 
 ## Planned work
 
-- Persistent active EQ settings, preset import and export.
+- Custom preset import/export and playback queue restoration.
 - Background playback service and MediaSession notification / lock-screen controls.
 - Media library browsing, metadata, album art and queue management improvements.
 - Additional DSP effects such as a tested limiter and optional dynamics controls.

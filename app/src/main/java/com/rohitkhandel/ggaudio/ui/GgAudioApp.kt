@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rohitkhandel.ggaudio.audio.AudioBackendStatus
+import com.rohitkhandel.ggaudio.audio.AudioSettingsSnapshot
 import com.rohitkhandel.ggaudio.audio.EqualizerBand
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
 import com.rohitkhandel.ggaudio.audio.GlobalAudioEffectsController
@@ -48,6 +49,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import com.rohitkhandel.ggaudio.ui.theme.*
 import com.rohitkhandel.ggaudio.ui.theme.Surface as CardSurface
 
@@ -76,11 +78,51 @@ fun GgAudioApp() {
     var playbackDurationMs by remember { mutableLongStateOf(0L) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     var presetMessage by remember { mutableStateOf<String?>(null) }
+    var settingsLoaded by remember { mutableStateOf(false) }
+    var settingsStatus by remember { mutableStateOf("Loading saved settings…") }
 
     val context = LocalContext.current
     val presetRepository = remember(context) { SavedEqualizerPresetRepository(context) }
     val savedPresets by presetRepository.presets.collectAsState(initial = emptyList())
     val presetScope = rememberCoroutineScope()
+
+    LaunchedEffect(presetRepository) {
+        try {
+            val stored = presetRepository.settings.first()
+            bands = stored.toBands()
+            presetName = stored.activePresetName
+            preamp = stored.preampDb
+            bassStrength = stored.bassBoostPercent.toFloat()
+            virtualizerStrength = stored.virtualizerPercent.toFloat()
+            settingsStatus = "Saved settings restored from this phone."
+        } catch (error: Exception) {
+            settingsStatus = error.message ?: "Could not load saved settings; defaults are active."
+        } finally {
+            settingsLoaded = true
+        }
+    }
+
+    LaunchedEffect(settingsLoaded, bands, presetName, preamp, bassStrength, virtualizerStrength) {
+        if (settingsLoaded) {
+            delay(350)
+            settingsStatus = "Saving settings…"
+            try {
+                presetRepository.saveSettings(
+                    AudioSettingsSnapshot(
+                        activePresetName = presetName,
+                        gainsDb = bands.map { it.gainDb },
+                        preampDb = preamp,
+                        bassBoostPercent = bassStrength.toInt().coerceIn(0, 100),
+                        virtualizerPercent = virtualizerStrength.toInt().coerceIn(0, 100)
+                    )
+                )
+                settingsStatus = "Settings saved on this phone."
+            } catch (error: Exception) {
+                settingsStatus = error.message ?: "Settings could not be saved."
+            }
+        }
+    }
+
     val localPlayer = remember(context) { LocalAudioPlayer(context) }
     val audioPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
@@ -306,7 +348,7 @@ fun GgAudioApp() {
                         }
                     }
                 )
-                AppTab.Settings -> SettingsScreen(backendStatus)
+                AppTab.Settings -> SettingsScreen(backendStatus, settingsStatus)
             }
         }
     }
@@ -695,7 +737,7 @@ private fun EffectControl(
 }
 
 @Composable
-private fun SettingsScreen(status: AudioBackendStatus) {
+private fun SettingsScreen(status: AudioBackendStatus, settingsStatus: String) {
     Column(Modifier.fillMaxSize().padding(22.dp)) {
         Text("SYSTEM DIAGNOSTICS", color = Accent, fontSize = 9.sp, letterSpacing = 1.5.sp)
         Text("Settings", color = TextPrimary, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
@@ -711,6 +753,18 @@ private fun SettingsScreen(status: AudioBackendStatus) {
                 DiagnosticRow("BassBoost", if (status.bassBoostAvailable) "AVAILABLE" else "NOT AVAILABLE")
                 DiagnosticRow("Virtualizer", if (status.virtualizerAvailable) "AVAILABLE" else "NOT AVAILABLE")
                 Text(status.message, color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 12.dp))
+            }
+        }
+        Surface(
+            Modifier.fillMaxWidth().padding(top = 12.dp),
+            color = CardSurface,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Outline)
+        ) {
+            Column(Modifier.padding(15.dp)) {
+                Text("ON-DEVICE STORAGE", color = Accent, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                Text(settingsStatus, color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 7.dp))
+                Text("Your EQ curve, preamp and effect levels stay on this phone.", color = TextMuted, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.padding(top = 5.dp))
             }
         }
         Text(

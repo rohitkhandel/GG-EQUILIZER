@@ -19,6 +19,7 @@ private val Context.ggAudioPresetDataStore by preferencesDataStore(
 )
 
 private val PRESETS_JSON = stringPreferencesKey("custom_equalizer_presets")
+private val ACTIVE_SETTINGS_JSON = stringPreferencesKey("active_audio_settings_json")
 
 class SavedEqualizerPresetRepository(context: Context) {
     private val dataStore = context.applicationContext.ggAudioPresetDataStore
@@ -29,6 +30,19 @@ class SavedEqualizerPresetRepository(context: Context) {
         }
         .map { preferences -> PresetJsonCodec.decode(preferences[PRESETS_JSON].orEmpty()) }
         .distinctUntilChanged()
+
+    val settings: Flow<AudioSettingsSnapshot> = dataStore.data
+        .catch { error ->
+            if (error is IOException) emit(emptyPreferences()) else throw error
+        }
+        .map { preferences -> AudioSettingsJsonCodec.decode(preferences[ACTIVE_SETTINGS_JSON].orEmpty()) }
+        .distinctUntilChanged()
+
+    suspend fun saveSettings(settings: AudioSettingsSnapshot) {
+        dataStore.edit { preferences ->
+            preferences[ACTIVE_SETTINGS_JSON] = AudioSettingsJsonCodec.encode(settings)
+        }
+    }
 
     suspend fun savePreset(
         name: String,
