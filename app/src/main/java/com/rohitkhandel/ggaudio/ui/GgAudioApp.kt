@@ -7,6 +7,9 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import com.rohitkhandel.ggaudio.audio.AudioBackendStatus
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
 import com.rohitkhandel.ggaudio.audio.GlobalAudioEffectsController
+import com.rohitkhandel.ggaudio.audio.LocalAudioFile
 import com.rohitkhandel.ggaudio.audio.LocalAudioPlayer
 import com.rohitkhandel.ggaudio.audio.formatPlaybackTime
 import androidx.media3.common.PlaybackException
@@ -54,6 +58,8 @@ fun GgAudioApp() {
         mutableStateOf(AudioBackendStatus(false, "Not connected. Tap Connect to check device support."))
     }
     var selectedTrack by remember { mutableStateOf<String?>(null) }
+    var queue by remember { mutableStateOf<List<LocalAudioFile>>(emptyList()) }
+    var currentTrackIndex by remember { mutableIntStateOf(0) }
     var localPlayerReady by remember { mutableStateOf(false) }
     var localPlayerPlaying by remember { mutableStateOf(false) }
     var playbackPositionMs by remember { mutableLongStateOf(0L) }
@@ -63,24 +69,29 @@ fun GgAudioApp() {
     val context = LocalContext.current
     val localPlayer = remember(context) { LocalAudioPlayer(context) }
     val audioPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            try {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (_: SecurityException) {
-                // Some document providers grant temporary read access only.
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            val chosenTracks = uris.distinctBy { it.toString() }.map { uri ->
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: SecurityException) {
+                    // Some document providers grant temporary read access only.
+                }
+                LocalAudioFile(uri, queryDisplayName(context, uri))
             }
-            selectedTrack = queryDisplayName(context, uri)
+            queue = chosenTracks
+            currentTrackIndex = 0
+            selectedTrack = chosenTracks.firstOrNull()?.title
             localPlayerReady = false
             localPlayerPlaying = false
             playbackPositionMs = 0L
             playbackDurationMs = 0L
             playbackError = null
-            localPlayer.load(uri)
+            localPlayer.loadQueue(chosenTracks)
         }
     }
 
@@ -103,6 +114,16 @@ fun GgAudioApp() {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 localPlayerPlaying = isPlaying
+            }
+
+            override fun onMediaItemTransition(
+                mediaItem: androidx.media3.common.MediaItem?,
+                reason: Int
+            ) {
+                currentTrackIndex = localPlayer.player.currentMediaItemIndex.coerceAtLeast(0)
+                selectedTrack = mediaItem?.mediaMetadata?.title?.toString() ?: selectedTrack
+                playbackPositionMs = 0L
+                playbackDurationMs = localPlayer.player.duration.coerceAtLeast(0L)
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -211,7 +232,12 @@ fun GgAudioApp() {
                     positionMs = playbackPositionMs,
                     durationMs = playbackDurationMs,
                     playbackError = playbackError,
+                    queueNames = queue.map { it.title },
+                    currentTrackIndex = currentTrackIndex,
                     onOpenAudio = { audioPicker.launch(arrayOf("audio/*")) },
+                    onSelectTrack = { index -> localPlayer.selectTrack(index) },
+                    onPrevious = { localPlayer.skipToPrevious() },
+                    onNext = { localPlayer.skipToNext() },
                     onSeek = { positionMs -> localPlayer.player.seekTo(positionMs.coerceAtLeast(0L)) },
                     onPlayPause = {
                         if (localPlayerPlaying) localPlayer.pause() else localPlayer.play()
@@ -358,7 +384,12 @@ private fun LocalPlayerScreen(
     positionMs: Long,
     durationMs: Long,
     playbackError: String?,
+    queueNames: List<String>,
+    currentTrackIndex: Int,
     onOpenAudio: () -> Unit,
+    onSelectTrack: (Int) -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
     onSeek: (Long) -> Unit,
     onPlayPause: () -> Unit,
     onStop: () -> Unit
@@ -375,7 +406,7 @@ private fun LocalPlayerScreen(
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 20.dp)) {
         Text("LOCAL PCM PLAYBACK", color = Accent, fontSize = 9.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
         Text("Player", color = TextPrimary, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
-        Text("Play a local audio file through GG Audio's software DSP.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+        Text("Build a queue and play it through GG Audio's software DSP.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
         Surface(
             Modifier.fillMaxWidth().padding(top = 19.dp),
             color = CardSurface,
@@ -439,31 +470,84 @@ private fun LocalPlayerScreen(
                         contentColor = Color(0xFFFFC18B)
                     )
                 ) {
-                    Text("OPEN AUDIO FILE", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("ADD AUDIO FILES", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
                 Row(
                     Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp)
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
+                    Button(
+                        onClick = onPrevious,
+                        enabled = queueNames.isNotEmpty(),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(9.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                    ) {
+                        Text("PREV", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
                     Button(
                         onClick = onPlayPause,
                         enabled = ready,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp)
+                        modifier = Modifier.weight(1.25f),
+                        shape = RoundedCornerShape(9.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                     ) {
-                        Text(if (playing) "PAUSE" else "PLAY", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text(if (playing) "PAUSE" else "PLAY", fontSize = 9.sp, fontWeight = FontWeight.Bold)
                     }
                     Button(
-                        onClick = onStop,
-                        enabled = trackName != null,
+                        onClick = onNext,
+                        enabled = currentTrackIndex < queueNames.lastIndex,
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF303A47),
-                            contentColor = TextPrimary
-                        )
+                        shape = RoundedCornerShape(9.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                     ) {
-                        Text("STOP", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("NEXT", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                TextButton(
+                    onClick = onStop,
+                    enabled = queueNames.isNotEmpty(),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    Text("STOP PLAYBACK", color = TextMuted, fontSize = 8.sp)
+                }
+            }
+        }
+        if (queueNames.isNotEmpty()) {
+            Surface(
+                Modifier.fillMaxWidth().padding(top = 12.dp),
+                color = CardSurface,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, Outline)
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("PLAY QUEUE", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold)
+                        Text("${queueNames.size} TRACKS", color = Accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    }
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 184.dp).padding(top = 6.dp)) {
+                        itemsIndexed(queueNames) { index, name ->
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (index == currentTrackIndex) Color(0xFF30271F) else Color.Transparent)
+                                    .clickable { onSelectTrack(index) }
+                                    .padding(horizontal = 9.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text((index + 1).toString().padStart(2, '0'), color = TextMuted, fontSize = 8.sp)
+                                Text(
+                                    name,
+                                    color = if (index == currentTrackIndex) Accent else TextPrimary,
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    modifier = Modifier.weight(1f).padding(start = 9.dp)
+                                )
+                                if (index == currentTrackIndex) {
+                                    Text("NOW", color = Accent, fontSize = 7.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
                 }
             }
