@@ -99,4 +99,67 @@ class DspAudioProcessorTest {
         assertTrue("Limiter should preserve a strong output level instead of muting the signal.", maximumPeak > 0.75f)
     }
 
+    @Test
+    fun pcm16ProcessorAppliesBassShelfFromSharedSettings() {
+        val store = DspSettingsStore(
+            initialBands = EqualizerDefaults.flat(),
+            initialPreampDb = 0f,
+            initialBassBoostPercent = 100
+        )
+        val processor = DspAudioProcessor(settingsStore = store)
+        processor.configure(AudioProcessor.AudioFormat(48_000, 1, C.ENCODING_PCM_16BIT))
+        processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
+
+        val frameCount = 48_000
+        val input = ByteBuffer.allocateDirect(frameCount * 2).order(ByteOrder.nativeOrder())
+        repeat(frameCount) { index ->
+            val sample = sin(2.0 * PI * 80.0 * index / 48_000) * 0.1
+            input.putShort((sample * 32767.0).toInt().toShort())
+        }
+        input.flip()
+
+        processor.queueInput(input)
+        val output = processor.output.order(ByteOrder.nativeOrder())
+        var inputEnergy = 0.0
+        var outputEnergy = 0.0
+        var index = 0
+        while (output.remaining() >= 2) {
+            val sample = output.short.toDouble() / 32768.0
+            val original = sin(2.0 * PI * 80.0 * index / 48_000) * 0.1
+            if (index > 12_000) {
+                inputEnergy += original * original
+                outputEnergy += sample * sample
+            }
+            index++
+        }
+        assertTrue("Shared bass setting must change the local PCM output.", outputEnergy > inputEnergy * 2.0)
+    }
+
+    @Test
+    fun pcm16ProcessorAppliesStereoWidthFromSharedSettings() {
+        val store = DspSettingsStore(
+            initialBands = EqualizerDefaults.flat(),
+            initialPreampDb = 0f,
+            initialStereoWidthPercent = 100
+        )
+        val processor = DspAudioProcessor(settingsStore = store)
+        processor.configure(AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+        processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
+
+        val input = ByteBuffer.allocateDirect(16).order(ByteOrder.nativeOrder())
+        repeat(4) {
+            input.putShort(6_553)
+            input.putShort((-6_553).toShort())
+        }
+        input.flip()
+
+        processor.queueInput(input)
+        val output = processor.output.order(ByteOrder.nativeOrder())
+        val left = output.short.toFloat() / 32768f
+        val right = output.short.toFloat() / 32768f
+
+        assertTrue("Stereo width must expand the side signal.", left > 0.30f)
+        assertTrue("Stereo width must preserve left/right polarity.", right < -0.30f)
+    }
+
 }

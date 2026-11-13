@@ -465,7 +465,13 @@ fun GgAudioApp() {
                         presetName = "Custom"
                     },
                     savedPresets = savedPresets,
-                    onManagePresets = { selectedTab = AppTab.Presets },
+                    onToneClick = { selectedTab = AppTab.Effects },
+                    onSaveClick = { selectedTab = AppTab.Presets },
+                    onResetClick = {
+                        bands = EqualizerDefaults.flat()
+                        presetName = "Flat"
+                        preamp = 0f
+                    },
                     onPresetChange = { name, updated, updatedPreamp ->
                         presetName = name
                         bands = updated
