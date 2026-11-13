@@ -1,0 +1,34 @@
+package com.rohitkhandel.ggaudio
+
+import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class EqualizerNavigationTest {
+    @get:Rule
+    val composeRule = createAndroidComposeRule<MainActivity>()
+
+    @Test
+    fun homeRendersTenBandControls() {
+        composeRule.onNodeWithText("Equalizer").assertExists()
+        composeRule.onNodeWithContentDescription("31 Hz gain").assertExists()
+        composeRule.onNodeWithContentDescription("16K Hz gain").assertExists()
+    }
+
+    @Test
+    fun bottomNavigationOpensEffectsAndReturnsHome() {
+        composeRule.onNodeWithText("Effects").performClick()
+        composeRule.onNodeWithText("Sound effects").assertIsDisplayed()
+
+        composeRule.onNodeWithText("Equalizer").performClick()
+        composeRule.onNodeWithContentDescription("31 Hz gain").assertExists()
+    }
+}
