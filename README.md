@@ -30,7 +30,7 @@ A private, offline-first native Android equalizer with an optional local audio t
 
 The ten-band EQ, preamp, software Bass Boost, Stereo Width and peak limiter are connected to audio played **inside GG Audio's local player**.
 
-For external apps, GG Audio listens for Android's standard audio-effect session broadcasts and attempts to attach insert effects to the announced session ID. This works only when the player sends those broadcasts and the device grants effect control. External sessions currently use the active shared EQ/effects values; independent saved profiles per app are not implemented yet.
+For external apps, GG Audio listens for Android's standard audio-effect session broadcasts and attempts to attach insert effects to the announced session ID. This works only when the player sends those broadcasts and the device grants effect control. When a saved profile exists for that package, its EQ bands, preamp, Bass Boost and Stereo Width are applied to that session; otherwise the shared default settings are used. Saved profiles can be created, loaded for editing, updated and deleted in Settings. Editing a profile updates the external session when the profile is saved.
 
 The legacy global AudioEffect adapter is best-effort only. Android's session-0 insert effects are deprecated and device vendors may reject them or restrict their control. No route is guaranteed on every device or player. Real behavior must be checked on the target phone.
 
@@ -59,5 +59,6 @@ Run gradle --no-daemon assembleDebug and gradle --no-daemon testDebugUnitTest fr
 
 - Test per-app profile switching with two compatible players on the target phone.
 - Verify session-broadcast compatibility and control ownership on the target phone.
+- Physical-device tests using two compatible external players, confirming that changing one saved profile leaves the other player unchanged.
 - Physical-device audio checks, then CPU, latency and battery tuning.
 - Secondary local-player library improvements after the equalizer engine is stable.
