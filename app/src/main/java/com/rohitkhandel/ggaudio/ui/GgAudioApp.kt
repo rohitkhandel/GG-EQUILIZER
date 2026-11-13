@@ -1,9 +1,12 @@
 package com.rohitkhandel.ggaudio.ui
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -40,16 +43,22 @@ import com.rohitkhandel.ggaudio.audio.EqualizerBand
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
 import com.rohitkhandel.ggaudio.audio.GlobalAudioEffectsController
 import com.rohitkhandel.ggaudio.audio.LocalAudioFile
-import com.rohitkhandel.ggaudio.audio.LocalAudioPlayer
+import com.rohitkhandel.ggaudio.audio.GgAudioPlaybackService
+import com.rohitkhandel.ggaudio.audio.PlaybackDspSettings
 import com.rohitkhandel.ggaudio.audio.EqualizerPresetLibrary
 import com.rohitkhandel.ggaudio.audio.SavedEqualizerPreset
 import com.rohitkhandel.ggaudio.audio.SavedEqualizerPresetRepository
 import com.rohitkhandel.ggaudio.audio.formatPlaybackTime
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import java.util.concurrent.Executor
 import com.rohitkhandel.ggaudio.ui.theme.*
 import com.rohitkhandel.ggaudio.ui.theme.Surface as CardSurface
 
@@ -80,6 +89,8 @@ fun GgAudioApp() {
     var presetMessage by remember { mutableStateOf<String?>(null) }
     var settingsLoaded by remember { mutableStateOf(false) }
     var settingsStatus by remember { mutableStateOf("Loading saved settings…") }
+    var mediaConnectionError by remember { mutableStateOf<String?>(null) }
+    var queueRevision by remember { mutableIntStateOf(0) }
 
     val context = LocalContext.current
     val presetRepository = remember(context) { SavedEqualizerPresetRepository(context) }
@@ -123,7 +134,42 @@ fun GgAudioApp() {
         }
     }
 
-    val localPlayer = remember(context) { LocalAudioPlayer(context) }
+    var mediaController by remember { mutableStateOf<MediaController?>(null) }
+    val sessionToken = remember(context) {
+        SessionToken(context, ComponentName(context, GgAudioPlaybackService::class.java))
+    }
+    val controllerFuture = remember(sessionToken) {
+        MediaController.Builder(context, sessionToken).buildAsync()
+    }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val mainExecutor = remember {
+        Executor { command -> mainHandler.post(command) }
+    }
+
+    DisposableEffect(controllerFuture) {
+        var active = true
+        controllerFuture.addListener(
+            {
+                if (active) {
+                    try {
+                        mediaController = controllerFuture.get()
+                        mediaConnectionError = null
+                    } catch (error: Exception) {
+                        mediaConnectionError = error.cause?.message
+                            ?: error.message
+                            ?: "Could not connect to the playback service."
+                    }
+                }
+            },
+            mainExecutor
+        )
+        onDispose {
+            active = false
+            mediaController = null
+            MediaController.releaseFuture(controllerFuture)
+        }
+    }
+
     val audioPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
@@ -135,11 +181,12 @@ fun GgAudioApp() {
                         Intent.FLAG_GRANT_READ_URI_PERMISSION
                     )
                 } catch (_: SecurityException) {
-                    // Some document providers grant temporary read access only.
+                    // A few document providers offer temporary-only access.
                 }
                 LocalAudioFile(uri, queryDisplayName(context, uri))
             }
             queue = chosenTracks
+            queueRevision += 1
             currentTrackIndex = 0
             selectedTrack = chosenTracks.firstOrNull()?.title
             localPlayerReady = false
@@ -147,64 +194,104 @@ fun GgAudioApp() {
             playbackPositionMs = 0L
             playbackDurationMs = 0L
             playbackError = null
-            localPlayer.loadQueue(chosenTracks)
         }
     }
 
-    DisposableEffect(localPlayer) {
-        val listener = object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                localPlayerReady = playbackState == Player.STATE_READY
-                if (playbackState == Player.STATE_READY) {
-                    playbackDurationMs = localPlayer.player.duration.coerceAtLeast(0L)
-                    playbackPositionMs = localPlayer.player.currentPosition.coerceAtLeast(0L)
-                    playbackError = null
-                }
-                if (playbackState == Player.STATE_ENDED) {
-                    playbackPositionMs = playbackDurationMs
-                    localPlayerPlaying = false
-                } else if (playbackState == Player.STATE_IDLE) {
-                    localPlayerPlaying = false
-                }
+    LaunchedEffect(mediaController, queueRevision) {
+        val player = mediaController ?: return@LaunchedEffect
+        if (queueRevision > 0 && queue.isNotEmpty()) {
+            val mediaItems = queue.map { track ->
+                MediaItem.Builder()
+                    .setUri(track.uri)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(track.title)
+                            .build()
+                    )
+                    .build()
             }
-
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                localPlayerPlaying = isPlaying
-            }
-
-            override fun onMediaItemTransition(
-                mediaItem: androidx.media3.common.MediaItem?,
-                reason: Int
-            ) {
-                currentTrackIndex = localPlayer.player.currentMediaItemIndex.coerceAtLeast(0)
-                selectedTrack = mediaItem?.mediaMetadata?.title?.toString() ?: selectedTrack
-                playbackPositionMs = 0L
-                playbackDurationMs = localPlayer.player.duration.coerceAtLeast(0L)
-            }
-
-            override fun onPlayerError(error: PlaybackException) {
-                localPlayerPlaying = false
-                localPlayerReady = false
-                playbackError = error.message ?: error.errorCodeName
-            }
-        }
-        localPlayer.player.addListener(listener)
-        onDispose {
-            localPlayer.player.removeListener(listener)
-            localPlayer.close()
+            player.setMediaItems(mediaItems, 0, 0L)
+            player.prepare()
         }
     }
 
-    LaunchedEffect(localPlayerReady, localPlayerPlaying, selectedTrack) {
+    DisposableEffect(mediaController) {
+        val player = mediaController
+        if (player == null) {
+            onDispose { }
+        } else {
+            val listener = object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    localPlayerReady = playbackState == Player.STATE_READY
+                    if (playbackState == Player.STATE_READY) {
+                        playbackDurationMs = player.duration.coerceAtLeast(0L)
+                        playbackPositionMs = player.currentPosition.coerceAtLeast(0L)
+                        playbackError = null
+                    }
+                    if (playbackState == Player.STATE_ENDED) {
+                        playbackPositionMs = playbackDurationMs
+                        localPlayerPlaying = false
+                    } else if (playbackState == Player.STATE_IDLE) {
+                        localPlayerPlaying = false
+                    }
+                }
+
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    localPlayerPlaying = isPlaying
+                }
+
+                override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                    val restoredQueue = (0 until player.mediaItemCount).mapNotNull { index ->
+                        val item = player.getMediaItemAt(index)
+                        val uri = item.localConfiguration?.uri ?: return@mapNotNull null
+                        val title = item.mediaMetadata.title?.toString()
+                            ?: uri.lastPathSegment?.substringAfterLast('/')
+                            ?: "Audio"
+                        LocalAudioFile(uri, title)
+                    }
+                    if (restoredQueue.isNotEmpty() || player.mediaItemCount == 0) {
+                        queue = restoredQueue
+                    }
+                }
+
+                override fun onMediaItemTransition(
+                    mediaItem: MediaItem?,
+                    reason: Int
+                ) {
+                    currentTrackIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+                    selectedTrack = mediaItem?.mediaMetadata?.title?.toString() ?: selectedTrack
+                    playbackPositionMs = 0L
+                    playbackDurationMs = player.duration.coerceAtLeast(0L)
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    localPlayerPlaying = false
+                    localPlayerReady = false
+                    playbackError = error.message ?: error.errorCodeName
+                }
+            }
+            player.addListener(listener)
+            localPlayerReady = player.playbackState == Player.STATE_READY
+            localPlayerPlaying = player.isPlaying
+            selectedTrack = player.currentMediaItem?.mediaMetadata?.title?.toString()
+            currentTrackIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+            playbackDurationMs = player.duration.coerceAtLeast(0L)
+            playbackPositionMs = player.currentPosition.coerceAtLeast(0L)
+            onDispose { player.removeListener(listener) }
+        }
+    }
+
+    LaunchedEffect(localPlayerReady, localPlayerPlaying, selectedTrack, mediaController) {
+        val player = mediaController ?: return@LaunchedEffect
         while (selectedTrack != null && localPlayerReady) {
-            playbackPositionMs = localPlayer.player.currentPosition.coerceAtLeast(0L)
-            playbackDurationMs = localPlayer.player.duration.coerceAtLeast(0L)
+            playbackPositionMs = player.currentPosition.coerceAtLeast(0L)
+            playbackDurationMs = player.duration.coerceAtLeast(0L)
             delay(300)
         }
     }
 
-    LaunchedEffect(bands, preamp) {
-        localPlayer.updateEqualizer(bands, preamp)
+    LaunchedEffect(bands, preamp, settingsLoaded) {
+        if (settingsLoaded) PlaybackDspSettings.update(bands, preamp)
     }
 
     val controller = remember { GlobalAudioEffectsController() }
@@ -290,19 +377,38 @@ fun GgAudioApp() {
                     playing = localPlayerPlaying,
                     positionMs = playbackPositionMs,
                     durationMs = playbackDurationMs,
-                    playbackError = playbackError,
+                    playbackError = playbackError ?: mediaConnectionError,
                     queueNames = queue.map { it.title },
                     currentTrackIndex = currentTrackIndex,
                     onOpenAudio = { audioPicker.launch(arrayOf("audio/*")) },
-                    onSelectTrack = { index -> localPlayer.selectTrack(index) },
-                    onPrevious = { localPlayer.skipToPrevious() },
-                    onNext = { localPlayer.skipToNext() },
-                    onSeek = { positionMs -> localPlayer.player.seekTo(positionMs.coerceAtLeast(0L)) },
+                    onSelectTrack = { index ->
+                        mediaController?.let { player ->
+                            if (index in 0 until player.mediaItemCount) {
+                                player.seekTo(index, 0L)
+                                player.play()
+                            }
+                        }
+                    },
+                    onPrevious = {
+                        mediaController?.let { player ->
+                            if (player.currentPosition > 3_000L) player.seekTo(0L)
+                            else if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
+                            else player.seekTo(0L)
+                        }
+                    },
+                    onNext = {
+                        mediaController?.let { player ->
+                            if (player.hasNextMediaItem()) player.seekToNextMediaItem()
+                        }
+                    },
+                    onSeek = { positionMs -> mediaController?.seekTo(positionMs.coerceAtLeast(0L)) },
                     onPlayPause = {
-                        if (localPlayerPlaying) localPlayer.pause() else localPlayer.play()
+                        mediaController?.let { player ->
+                            if (localPlayerPlaying) player.pause() else player.play()
+                        }
                     },
                     onStop = {
-                        localPlayer.stop()
+                        mediaController?.stop()
                         localPlayerPlaying = false
                         playbackPositionMs = 0L
                     }

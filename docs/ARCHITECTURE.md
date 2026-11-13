@@ -13,12 +13,13 @@
 
 1. **Presentation** — Jetpack Compose screens for Equalizer, Player, Effects, Presets and Settings.
 2. **Domain** — ten equalizer bands, built-in profiles, preamp values and playback queue state.
-3. **Local playback** — Media3 ExoPlayer with Android's document picker and a queue of selected local audio files.
-4. **PCM adapter** — Media3 DspAudioProcessor accepts PCM16 buffers and applies GG Audio's software processor before playback.
-5. **Preset and settings persistence** — AndroidX Preferences DataStore stores custom 10-band curves plus active EQ, preamp and effect values locally; JSON codecs validate restored state.
-6. **DSP core** — ParametricEqualizerProcessor builds peaking biquad filters and processes interleaved floating-point samples per channel.
-7. **Android effects** — GlobalAudioEffectsController probes optional Android Equalizer, BassBoost and Virtualizer effects and reports whether the device granted control.
-8. **Tests** — JVM tests cover EQ defaults, gain bounds, PCM round-trip, tone boost/cut, channel separation, preamp and playback-time formatting.
+3. **Background playback** — a MediaSessionService owns ExoPlayer; the Compose Activity connects using a MediaController. Media3 supplies the system media notification and lock-screen controls.
+4. **Local playback** — Android document picker feeds a Media3 playlist and queue.
+5. **PCM adapter** — Media3 DspAudioProcessor accepts PCM16 buffers and applies GG Audio's software processor before playback.
+6. **Preset and settings persistence** — AndroidX Preferences DataStore stores custom 10-band curves plus active EQ, preamp and effect values locally; JSON codecs validate restored state.
+7. **DSP core** — ParametricEqualizerProcessor builds peaking biquad filters and processes interleaved floating-point samples per channel.
+8. **Android effects** — GlobalAudioEffectsController probes optional Android Equalizer, BassBoost and Virtualizer effects and reports whether the device granted control.
+9. **Tests** — JVM tests cover EQ defaults, gain bounds, PCM round-trip, tone boost/cut, channel separation, preamp and playback-time formatting.
 
 ## Local audio data flow
 
@@ -49,7 +50,7 @@ A device that rejects session 0 will still be able to use the software DSP in GG
 
 ## Planned work
 
-- Custom preset import/export and playback queue restoration.
+- Playback resumption after process death and persistent queue restoration.
 - Background playback service and MediaSession notification / lock-screen controls.
 - Media library browsing, metadata, album art and queue management improvements.
 - Additional DSP effects such as a tested limiter and optional dynamics controls.

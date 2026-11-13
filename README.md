@@ -10,7 +10,8 @@ A private, offline-first native Android audio player and equalizer. The goal is 
 - Android 8.0+ baseline (minSdk 26).
 - Ten-band graphic equalizer with Balanced, Bass Boost, Vocal, Treble and Flat profiles.
 - Peaking biquad software EQ and adjustable preamp in the PCM processing path.
-- Media3 local audio player using Android's Storage Access Framework file picker.
+- Media3 ExoPlayer is hosted in a MediaSessionService, so playback can continue outside the Activity.
+- System media-style notification and lock-screen transport controls are provided by Media3.
 - Multi-file playback queue with track selection, previous/next, play/pause, stop and seek.
 - Track titles are read from the selected document provider.
 - Optional Android global Equalizer, BassBoost and Virtualizer adapter with device capability checks.

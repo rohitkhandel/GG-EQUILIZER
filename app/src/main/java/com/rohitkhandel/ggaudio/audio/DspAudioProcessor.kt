@@ -9,36 +9,56 @@ import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 
+data class DspSettingsSnapshot(
+    val bands: List<EqualizerBand>,
+    val preampDb: Float
+)
+
+class DspSettingsStore(
+    initialBands: List<EqualizerBand> = EqualizerDefaults.flat(),
+    initialPreampDb: Float = 0f
+) {
+    private val settings = AtomicReference(
+        DspSettingsSnapshot(initialBands.toList(), initialPreampDb)
+    )
+
+    fun update(bands: List<EqualizerBand>, preampDb: Float) {
+        require(preampDb in -24f..12f) { "Preamp must be between -24 dB and +12 dB." }
+        require(bands.size <= 32) { "At most 32 EQ bands are supported." }
+        settings.set(DspSettingsSnapshot(bands.toList(), preampDb))
+    }
+
+    fun snapshot(): DspSettingsSnapshot = settings.get()
+}
+
+/** Shared process-local bridge from Compose controls to the service-owned PCM processor. */
+object PlaybackDspSettings {
+    val store = DspSettingsStore(EqualizerDefaults.balanced(), 0f)
+
+    fun update(bands: List<EqualizerBand>, preampDb: Float) {
+        store.update(bands, preampDb)
+    }
+}
+
 /**
- * Media3 PCM adapter that runs the GG Audio peaking-EQ core on PCM16 samples.
- *
- * This processor is used by GG Audio's own player pipeline. It is not a capture
- * API and cannot alter audio produced by unrelated apps.
+ * Processes PCM16 audio inside GG Audio's Media3 player pipeline.
+ * It does not capture or modify audio emitted by unrelated apps.
  */
 @UnstableApi
 class DspAudioProcessor(
     initialBands: List<EqualizerBand> = EqualizerDefaults.flat(),
-    initialPreampDb: Float = 0f
+    initialPreampDb: Float = 0f,
+    private val settingsStore: DspSettingsStore = DspSettingsStore(initialBands, initialPreampDb)
 ) : BaseAudioProcessor() {
 
-    private data class DspSettings(
-        val bands: List<EqualizerBand>,
-        val preampDb: Float
-    )
-
-    private val requestedSettings = AtomicReference(
-        DspSettings(initialBands.toList(), initialPreampDb)
-    )
-
-    private var appliedSettings: DspSettings? = null
+    private var appliedSettings: DspSettingsSnapshot? = null
     private var pcmProcessor: ParametricEqualizerProcessor? = null
     private var scratch = FloatArray(0)
     private var configuredSampleRate = 0
     private var configuredChannels = 0
 
     fun updateSettings(bands: List<EqualizerBand>, preampDb: Float = 0f) {
-        require(preampDb in -24f..12f) { "Preamp must be between -24 dB and +12 dB." }
-        requestedSettings.set(DspSettings(bands.toList(), preampDb))
+        settingsStore.update(bands, preampDb)
     }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
@@ -57,7 +77,7 @@ class DspAudioProcessor(
     }
 
     override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
-        rebuildProcessor(requestedSettings.get())
+        rebuildProcessor(settingsStore.snapshot())
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -74,7 +94,7 @@ class DspAudioProcessor(
         }
         inputBuffer.position(inputBuffer.limit())
 
-        val requested = requestedSettings.get()
+        val requested = settingsStore.snapshot()
         if (requested != appliedSettings || pcmProcessor == null) {
             rebuildProcessor(requested)
         }
@@ -89,7 +109,7 @@ class DspAudioProcessor(
         output.flip()
     }
 
-    private fun rebuildProcessor(settings: DspSettings) {
+    private fun rebuildProcessor(settings: DspSettingsSnapshot) {
         if (configuredSampleRate <= 0 || configuredChannels <= 0) return
         pcmProcessor = ParametricEqualizerProcessor(
             sampleRateHz = configuredSampleRate,
