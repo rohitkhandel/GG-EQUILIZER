@@ -224,17 +224,39 @@ fun GgAudioApp() {
                             AudioMetadataReader.read(context, uri)
                         }
                     }
-                    queue = chosenTracks
-                    currentTrackIndex = 0
-                    queueRevision += 1
-                    selectedTrack = chosenTracks.firstOrNull()?.title
-                    selectedArtist = chosenTracks.firstOrNull()?.artist
-                    selectedAlbum = chosenTracks.firstOrNull()?.album
-                    localPlayerReady = false
-                    localPlayerPlaying = false
-                    playbackPositionMs = 0L
-                    playbackDurationMs = 0L
-                    playbackError = null
+                    val player = mediaController
+                    val activeQueue = if (queue.isEmpty() && player != null && player.mediaItemCount > 0) {
+                        player.readLocalAudioQueue()
+                    } else {
+                        queue
+                    }
+                    val knownUris = activeQueue.mapTo(mutableSetOf()) { it.uri.toString() }
+                    val additions = chosenTracks.filter { knownUris.add(it.uri.toString()) }
+
+                    if (additions.isEmpty()) {
+                        playbackError = "The selected tracks are already in the queue."
+                    } else {
+                        val updatedQueue = activeQueue + additions
+                        if (activeQueue.isEmpty() || player == null || player.mediaItemCount == 0) {
+                            queue = updatedQueue
+                            queueRevision += 1
+                            if (activeQueue.isEmpty()) {
+                                currentTrackIndex = 0
+                                selectedTrack = additions.first().title
+                                selectedArtist = additions.first().artist
+                                selectedAlbum = additions.first().album
+                                localPlayerReady = false
+                                localPlayerPlaying = false
+                                playbackPositionMs = 0L
+                                playbackDurationMs = 0L
+                            }
+                        } else {
+                            // Append only: do not reset the currently playing item or its position.
+                            player.addMediaItems(additions.map { it.toMediaItem() })
+                            queue = updatedQueue
+                        }
+                        playbackError = null
+                    }
                 } catch (error: Exception) {
                     playbackError = error.message ?: "Could not read the selected audio files."
                 }
@@ -245,17 +267,7 @@ fun GgAudioApp() {
     LaunchedEffect(mediaController, queueRevision) {
         val player = mediaController ?: return@LaunchedEffect
         if (queueRevision > 0 && queue.isNotEmpty()) {
-            val mediaItems = queue.map { track ->
-                val metadata = MediaMetadata.Builder()
-                    .setTitle(track.title)
-                    .setArtist(track.artist)
-                    .setAlbumTitle(track.album)
-                    .build()
-                MediaItem.Builder()
-                    .setUri(track.uri)
-                    .setMediaMetadata(metadata)
-                    .build()
-            }
+            val mediaItems = queue.map { it.toMediaItem() }
             val startIndex = currentTrackIndex.coerceIn(0, mediaItems.lastIndex)
             val startPosition = playbackPositionMs.coerceAtLeast(0L)
             player.setMediaItems(mediaItems, startIndex, startPosition)
@@ -505,6 +517,19 @@ fun GgAudioApp() {
                         mediaController?.stop()
                         localPlayerPlaying = false
                         playbackPositionMs = 0L
+                    },
+                    onClearQueue = {
+                        queue = emptyList()
+                        mediaController?.clearMediaItems()
+                        currentTrackIndex = 0
+                        selectedTrack = null
+                        selectedArtist = null
+                        selectedAlbum = null
+                        localPlayerReady = false
+                        localPlayerPlaying = false
+                        playbackPositionMs = 0L
+                        playbackDurationMs = 0L
+                        playbackError = null
                     }
                 )
                 AppTab.Effects -> EffectsScreen(
@@ -552,6 +577,18 @@ fun GgAudioApp() {
             }
         }
     }
+}
+
+private fun LocalAudioFile.toMediaItem(): MediaItem {
+    val metadata = MediaMetadata.Builder()
+        .setTitle(title)
+        .setArtist(artist)
+        .setAlbumTitle(album)
+        .build()
+    return MediaItem.Builder()
+        .setUri(uri)
+        .setMediaMetadata(metadata)
+        .build()
 }
 
 private fun Player.readLocalAudioQueue(
@@ -686,7 +723,8 @@ private fun LocalPlayerScreen(
     onNext: () -> Unit,
     onSeek: (Long) -> Unit,
     onPlayPause: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onClearQueue: () -> Unit
 ) {
     var seekFraction by remember(trackName) { mutableFloatStateOf(0f) }
     var scrubbing by remember { mutableStateOf(false) }
@@ -811,12 +849,22 @@ private fun LocalPlayerScreen(
                         Text("NEXT", fontSize = 9.sp, fontWeight = FontWeight.Bold)
                     }
                 }
-                TextButton(
-                    onClick = onStop,
-                    enabled = queueNames.isNotEmpty(),
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
                 ) {
-                    Text("STOP PLAYBACK", color = TextMuted, fontSize = 8.sp)
+                    TextButton(
+                        onClick = onStop,
+                        enabled = queueNames.isNotEmpty()
+                    ) {
+                        Text("STOP PLAYBACK", color = TextMuted, fontSize = 8.sp)
+                    }
+                    TextButton(
+                        onClick = onClearQueue,
+                        enabled = queueNames.isNotEmpty()
+                    ) {
+                        Text("CLEAR QUEUE", color = Color(0xFFFF9B84), fontSize = 8.sp)
+                    }
                 }
             }
         }
