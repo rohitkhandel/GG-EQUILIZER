@@ -1,6 +1,9 @@
 package com.rohitkhandel.ggaudio.ui
 
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -27,7 +30,9 @@ import com.rohitkhandel.ggaudio.audio.AudioBackendStatus
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
 import com.rohitkhandel.ggaudio.audio.GlobalAudioEffectsController
 import com.rohitkhandel.ggaudio.audio.LocalAudioPlayer
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import kotlinx.coroutines.delay
 import com.rohitkhandel.ggaudio.ui.theme.*
 import com.rohitkhandel.ggaudio.ui.theme.Surface as CardSurface
 
@@ -50,6 +55,9 @@ fun GgAudioApp() {
     var selectedTrack by remember { mutableStateOf<String?>(null) }
     var localPlayerReady by remember { mutableStateOf(false) }
     var localPlayerPlaying by remember { mutableStateOf(false) }
+    var playbackPositionMs by remember { mutableLongStateOf(0L) }
+    var playbackDurationMs by remember { mutableLongStateOf(0L) }
+    var playbackError by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val localPlayer = remember(context) { LocalAudioPlayer(context) }
@@ -65,9 +73,12 @@ fun GgAudioApp() {
             } catch (_: SecurityException) {
                 // Some document providers grant temporary read access only.
             }
-            selectedTrack = uri.lastPathSegment?.substringAfterLast('/') ?: "Selected audio"
+            selectedTrack = queryDisplayName(context, uri)
             localPlayerReady = false
             localPlayerPlaying = false
+            playbackPositionMs = 0L
+            playbackDurationMs = 0L
+            playbackError = null
             localPlayer.load(uri)
         }
     }
@@ -76,7 +87,15 @@ fun GgAudioApp() {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 localPlayerReady = playbackState == Player.STATE_READY
-                if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
+                if (playbackState == Player.STATE_READY) {
+                    playbackDurationMs = localPlayer.player.duration.coerceAtLeast(0L)
+                    playbackPositionMs = localPlayer.player.currentPosition.coerceAtLeast(0L)
+                    playbackError = null
+                }
+                if (playbackState == Player.STATE_ENDED) {
+                    playbackPositionMs = playbackDurationMs
+                    localPlayerPlaying = false
+                } else if (playbackState == Player.STATE_IDLE) {
                     localPlayerPlaying = false
                 }
             }
@@ -84,11 +103,25 @@ fun GgAudioApp() {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 localPlayerPlaying = isPlaying
             }
+
+            override fun onPlayerError(error: PlaybackException) {
+                localPlayerPlaying = false
+                localPlayerReady = false
+                playbackError = error.message ?: error.errorCodeName
+            }
         }
         localPlayer.player.addListener(listener)
         onDispose {
             localPlayer.player.removeListener(listener)
             localPlayer.close()
+        }
+    }
+
+    LaunchedEffect(localPlayerReady, localPlayerPlaying, selectedTrack) {
+        while (selectedTrack != null && localPlayerReady) {
+            playbackPositionMs = localPlayer.player.currentPosition.coerceAtLeast(0L)
+            playbackDurationMs = localPlayer.player.duration.coerceAtLeast(0L)
+            delay(300)
         }
     }
 
@@ -174,13 +207,18 @@ fun GgAudioApp() {
                     trackName = selectedTrack,
                     ready = localPlayerReady,
                     playing = localPlayerPlaying,
+                    positionMs = playbackPositionMs,
+                    durationMs = playbackDurationMs,
+                    playbackError = playbackError,
                     onOpenAudio = { audioPicker.launch(arrayOf("audio/*")) },
+                    onSeek = { positionMs -> localPlayer.player.seekTo(positionMs.coerceAtLeast(0L)) },
                     onPlayPause = {
                         if (localPlayerPlaying) localPlayer.pause() else localPlayer.play()
                     },
                     onStop = {
                         localPlayer.stop()
                         localPlayerPlaying = false
+                        playbackPositionMs = 0L
                     }
                 )
                 AppTab.Effects -> EffectsScreen(
@@ -197,6 +235,27 @@ fun GgAudioApp() {
                 AppTab.Settings -> SettingsScreen(backendStatus)
             }
         }
+    }
+}
+
+private fun queryDisplayName(context: Context, uri: Uri): String {
+    return try {
+        context.contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val nameColumn = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst() && nameColumn >= 0) {
+                cursor.getString(nameColumn)?.takeIf { it.isNotBlank() }
+            } else {
+                null
+            }
+        } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Selected audio"
+    } catch (_: Exception) {
+        uri.lastPathSegment?.substringAfterLast('/') ?: "Selected audio"
     }
 }
 
@@ -295,10 +354,23 @@ private fun LocalPlayerScreen(
     trackName: String?,
     ready: Boolean,
     playing: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+    playbackError: String?,
     onOpenAudio: () -> Unit,
+    onSeek: (Long) -> Unit,
     onPlayPause: () -> Unit,
     onStop: () -> Unit
 ) {
+    var seekFraction by remember(trackName) { mutableFloatStateOf(0f) }
+    var scrubbing by remember { mutableStateOf(false) }
+    val safeDuration = durationMs.coerceAtLeast(1L)
+    LaunchedEffect(positionMs, durationMs, scrubbing) {
+        if (!scrubbing) {
+            seekFraction = if (durationMs > 0L) (positionMs.toFloat() / safeDuration).coerceIn(0f, 1f) else 0f
+        }
+    }
+
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 20.dp)) {
         Text("LOCAL PCM PLAYBACK", color = Accent, fontSize = 9.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
         Text("Player", color = TextPrimary, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
@@ -330,6 +402,33 @@ private fun LocalPlayerScreen(
                     letterSpacing = .5.sp,
                     modifier = Modifier.padding(top = 5.dp)
                 )
+                if (playbackError != null) {
+                    Text(
+                        playbackError,
+                        color = Color(0xFFFF8B80),
+                        fontSize = 9.sp,
+                        lineHeight = 13.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                Slider(
+                    value = seekFraction,
+                    onValueChange = {
+                        scrubbing = true
+                        seekFraction = it
+                    },
+                    onValueChangeFinished = {
+                        if (durationMs > 0L) onSeek((durationMs * seekFraction).toLong())
+                        scrubbing = false
+                    },
+                    valueRange = 0f..1f,
+                    enabled = ready && durationMs > 0L,
+                    modifier = Modifier.padding(top = 11.dp)
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(formatPlaybackTime(positionMs), color = TextMuted, fontSize = 8.sp)
+                    Text(formatPlaybackTime(durationMs), color = TextMuted, fontSize = 8.sp)
+                }
                 Button(
                     onClick = onOpenAudio,
                     modifier = Modifier.fillMaxWidth().padding(top = 17.dp),
@@ -347,7 +446,7 @@ private fun LocalPlayerScreen(
                 ) {
                     Button(
                         onClick = onPlayPause,
-                        enabled = trackName != null,
+                        enabled = ready,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
@@ -509,5 +608,18 @@ private fun PlaceholderScreen(title: String, subtitle: String) {
         Surface(Modifier.fillMaxWidth().padding(top = 22.dp), color = CardSurface, shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Outline)) {
             Text("This section is being built in stages. Only completed and verified functions will be shown as active.", color = TextMuted, fontSize = 12.sp, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
         }
+    }
+}
+
+
+private fun formatPlaybackTime(positionMs: Long): String {
+    val totalSeconds = (positionMs.coerceAtLeast(0L) / 1_000L)
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%02d:%02d".format(minutes, seconds)
     }
 }

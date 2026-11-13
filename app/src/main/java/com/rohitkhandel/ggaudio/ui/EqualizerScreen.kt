@@ -117,8 +117,8 @@ fun EqualizerScreen(
                     Text("OUTPUT LEVEL  ·  PREAMP", color = TextMuted, fontSize = 8.sp, fontWeight = FontWeight.Bold)
                     Text((if (preamp > 0) "+" else "") + "%.1f".format(preamp) + " dB", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
-                Slider(value = preamp, onValueChange = onPreampChange, valueRange = -12f..12f, enabled = false)
-                Text("Software preamp is ready in the DSP core; it becomes active when the PCM playback route is connected.", color = TextMuted, fontSize = 8.sp, lineHeight = 12.sp)
+                Slider(value = preamp, onValueChange = onPreampChange, valueRange = -12f..12f)
+                Text("Preamp is applied to local playback inside GG Audio.", color = TextMuted, fontSize = 8.sp, lineHeight = 12.sp)
             }
         }
     }

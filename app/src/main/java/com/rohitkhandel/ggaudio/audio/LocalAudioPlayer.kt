@@ -3,6 +3,7 @@ package com.rohitkhandel.ggaudio.audio
 import android.content.Context
 import android.net.Uri
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -42,7 +43,12 @@ class LocalAudioPlayer(context: Context) : Closeable {
         player.prepare()
     }
 
-    fun play() = player.play()
+    fun play() {
+        if (player.playbackState == Player.STATE_IDLE && player.currentMediaItem != null) {
+            player.prepare()
+        }
+        player.play()
+    }
 
     fun pause() = player.pause()
 
