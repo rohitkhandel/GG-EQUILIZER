@@ -74,17 +74,17 @@ fun EqualizerScreen(
                                 onPresetChange(name, bands.mapIndexed { index, band -> band.copy(gainDb = values[index]) }, 0f)
                             })
                         }
-                    }
-                    if (savedPresets.isNotEmpty()) {
-                        Text("SAVED PRESETS", color = TextMuted, fontSize = 8.sp, modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp))
-                        savedPresets.forEach { saved ->
-                            DropdownMenuItem(
-                                text = { Text(saved.name) },
-                                onClick = {
-                                    menuOpen = false
-                                    onPresetChange(saved.name, saved.toBands(), saved.preampDb)
-                                }
-                            )
+                        if (savedPresets.isNotEmpty()) {
+                            Text("SAVED PRESETS", color = TextMuted, fontSize = 8.sp, modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp))
+                            savedPresets.forEach { saved ->
+                                DropdownMenuItem(
+                                    text = { Text(saved.name) },
+                                    onClick = {
+                                        menuOpen = false
+                                        onPresetChange(saved.name, saved.toBands(), saved.preampDb)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
