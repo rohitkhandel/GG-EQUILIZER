@@ -283,7 +283,6 @@ fun StudioEqualizerWorkspace(
             StudioBandWorkspace(state, viewModel, accent)
         }
         StudioSpectrumStrip(state, accent) { onVisualizerToggle(!state.visualizerEnabled) }
-        StudioPlayerBadge(state)
         StudioEqActionRack(state, accent, viewModel, onSave, onImport, onReset, onOpenPresets)
         StudioBassTrebleRow(state, viewModel)
     }
@@ -292,18 +291,11 @@ fun StudioEqualizerWorkspace(
 @Composable
 private fun StudioConsoleModeBar(state: EqUiState, viewModel: EqViewModel, accent: Color) {
     Row(
-        Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 12.dp),
+        Modifier.fillMaxWidth().height(34.dp).padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("GG EQUALIZER", color = StudioText, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.15.sp)
-            Text(
-                if (state.bandCount == 32) "PARAMETRIC  ·  ${state.parametricBandIndices.size}/32 FILTERS"
-                else "GRAPHIC  ·  ${state.bandCount} BANDS",
-                color = StudioMuted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
             StudioModeChip("10", state.bandCount == 10, accent) { viewModel.setBandCount(10) }
             StudioModeChip("15", state.bandCount == 15, accent) { viewModel.setBandCount(15) }
             StudioModeChip("PARA", state.bandCount == 32, accent) { viewModel.setBandCount(32) }
@@ -663,10 +655,12 @@ private fun StudioEqActionRack(
     state: EqUiState, accent: Color, viewModel: EqViewModel,
     onSave: () -> Unit, onImport: () -> Unit, onReset: () -> Unit, onOpenPresets: () -> Unit
 ) {
-    var presetMenu by rememberSaveable { mutableStateOf(false) }
     var moreMenu by rememberSaveable { mutableStateOf(false) }
-    val selectedPreset = state.presets.firstOrNull { it.presetId == state.selectedPresetId }?.presetName ?: "Flat"
-    Row(Modifier.fillMaxWidth().height(71.dp).padding(horizontal = 10.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().height(55.dp).padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
         Column(Modifier.width(62.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             StudioActionPill(if (state.masterEnabled) "EQU" else "OFF", if (state.masterEnabled) accent else StudioMuted, Modifier.fillMaxWidth()) {
                 viewModel.setMasterEnabled(!state.masterEnabled)
@@ -675,33 +669,17 @@ private fun StudioEqActionRack(
                 viewModel.setLimiterEnabled(!state.limiterEnabled)
             }
         }
-        Spacer(Modifier.width(8.dp))
-        Box(Modifier.weight(1f)) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(Color(0xFF101318))
-                    .border(1.dp, Color(0xFF5A6068), RoundedCornerShape(26.dp)).clickable { presetMenu = true }
-                    .padding(vertical = 10.dp, horizontal = 9.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(selectedPreset.uppercase(Locale.US), color = StudioText, fontSize = 10.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("PRESET  ▾", color = StudioMuted, fontSize = 6.sp, letterSpacing = 1.sp)
-            }
-            DropdownMenu(expanded = presetMenu, onDismissRequest = { presetMenu = false }) {
-                state.presets.forEach { preset ->
-                    DropdownMenuItem(text = { Text(preset.presetName) }, onClick = { presetMenu = false; viewModel.applyPreset(preset) })
-                }
-                DropdownMenuItem(text = { Text("Browse preset library…") }, onClick = { presetMenu = false; onOpenPresets() })
-            }
-        }
+        StudioActionPill("PRESETS", accent, Modifier.weight(1f), onOpenPresets)
+        StudioActionPill("SAVE", StudioText, Modifier.weight(0.72f), onSave)
+        StudioActionPill("IMPORT", StudioText, Modifier.weight(0.82f), onImport)
         Box {
-            Text("⋮", color = StudioText, fontSize = 23.sp, modifier = Modifier.clickable { moreMenu = true }.padding(horizontal = 10.dp))
+            Text("⋮", color = StudioText, fontSize = 23.sp, modifier = Modifier.clickable { moreMenu = true }.padding(horizontal = 5.dp))
             DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
-                DropdownMenuItem(text = { Text("10-band graphic") }, onClick = { moreMenu = false; viewModel.setBandCount(10) })
-                DropdownMenuItem(text = { Text("15-band graphic") }, onClick = { moreMenu = false; viewModel.setBandCount(15) })
-                DropdownMenuItem(text = { Text("32-band parametric") }, onClick = { moreMenu = false; viewModel.setBandCount(32) })
-                DropdownMenuItem(text = { Text("Save preset") }, onClick = { moreMenu = false; onSave() })
-                DropdownMenuItem(text = { Text("Import AutoEQ") }, onClick = { moreMenu = false; onImport() })
                 DropdownMenuItem(text = { Text("Reset equalizer") }, onClick = { moreMenu = false; onReset() })
+                DropdownMenuItem(text = { Text("Graphic / parametric mode") }, onClick = {
+                    moreMenu = false
+                    viewModel.setBandCount(if (state.bandCount == 32) 10 else 32)
+                })
             }
         }
     }
