@@ -44,7 +44,7 @@ class GlobalAudioEffectsController : Closeable {
             val result = try {
                 // Session 0 targets the global output mix where the device permits it.
                 val candidate = Equalizer(0, 0)
-                if (!candidate.hasControl) {
+                if (!candidate.hasControl()) {
                     candidate.release()
                     AudioBackendStatus(
                         connected = false,
@@ -66,8 +66,8 @@ class GlobalAudioEffectsController : Closeable {
                             connected = true,
                             message = "System Equalizer attached. Other effects depend on device support.",
                             hardwareBandCount = candidate.numberOfBands.toInt(),
-                            bassBoostAvailable = bassBoost?.hasControl == true,
-                            virtualizerAvailable = virtualizer?.hasControl == true
+                            bassBoostAvailable = bassBoost?.hasControl() == true,
+                            virtualizerAvailable = virtualizer?.hasControl() == true
                         )
                     }
                 }
@@ -86,7 +86,7 @@ class GlobalAudioEffectsController : Closeable {
     fun applyBandGains(bands: List<EqualizerBand>) {
         dispatch {
             val eq = equalizer ?: return@dispatch
-            if (!eq.hasControl) return@dispatch
+            if (!eq.hasControl()) return@dispatch
 
             val range = eq.bandLevelRange
             if (range.size < 2) return@dispatch
@@ -109,7 +109,7 @@ class GlobalAudioEffectsController : Closeable {
         val strength = (percent.coerceIn(0, 100) * 10).toShort()
         dispatch {
             val effect = bassBoost ?: return@dispatch
-            if (effect.hasControl) {
+            if (effect.hasControl()) {
                 effect.setStrength(strength)
                 effect.enabled = percent > 0
             }
@@ -120,7 +120,7 @@ class GlobalAudioEffectsController : Closeable {
         val strength = (percent.coerceIn(0, 100) * 10).toShort()
         dispatch {
             val effect = virtualizer ?: return@dispatch
-            if (effect.hasControl) {
+            if (effect.hasControl()) {
                 effect.setStrength(strength)
                 effect.enabled = percent > 0
             }
@@ -141,12 +141,12 @@ class GlobalAudioEffectsController : Closeable {
     private fun <T : AudioEffect> createOptionalEffect(factory: () -> T): T? {
         return try {
             factory().also { effect ->
-                if (!effect.hasControl) {
+                if (!effect.hasControl()()) {
                     effect.release()
                 } else {
                     effect.enabled = false
                 }
-            }.takeIf { it.hasControl }
+            }.takeIf { it.hasControl() }
         } catch (_: Exception) {
             null
         }
