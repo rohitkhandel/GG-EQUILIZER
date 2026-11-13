@@ -56,7 +56,7 @@ class NativeDspBridgeSmokeTest {
                 "The native DSP engine must process the supplied stereo frames",
                 NativeDspBridge.nativeProcess(handle, samples, frameCount)
             )
-            assertTrue("DSP output must not contain NaN or infinity", samples.all(Float::isFinite))
+            assertTrue("DSP output must not contain NaN or infinity", samples.all { it.isFinite() })
 
             val outputPeak = samples.maxOf { abs(it) }
             assertTrue("DSP output should contain non-silent audio", outputPeak > 0.05f)
