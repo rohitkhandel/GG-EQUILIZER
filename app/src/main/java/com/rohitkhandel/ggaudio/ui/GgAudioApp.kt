@@ -299,20 +299,31 @@ fun GgAudioApp() {
         }
     }
 
-    LaunchedEffect(queue, currentTrackIndex, playbackPositionMs, queueRestored) {
-        if (queueRestored) {
-            delay(1_200)
-            try {
-                presetRepository.savePlaybackQueue(
-                    PlaybackQueueSnapshot(
-                        tracks = queue.take(500).map { PlaybackQueueTrack(it.uri.toString(), it.title.take(512)) },
-                        currentIndex = if (queue.isEmpty()) 0 else currentTrackIndex.coerceIn(0, queue.lastIndex),
-                        positionMs = playbackPositionMs.coerceAtLeast(0L)
-                    )
+    suspend fun persistPlaybackQueue() {
+        try {
+            presetRepository.savePlaybackQueue(
+                PlaybackQueueSnapshot(
+                    tracks = queue.take(500).map { PlaybackQueueTrack(it.uri.toString(), it.title.take(512)) },
+                    currentIndex = if (queue.isEmpty()) 0 else currentTrackIndex.coerceIn(0, queue.lastIndex),
+                    positionMs = playbackPositionMs.coerceAtLeast(0L)
                 )
-            } catch (error: Exception) {
-                playbackError = error.message ?: "Could not save the playback queue."
-            }
+            )
+        } catch (error: Exception) {
+            playbackError = error.message ?: "Could not save the playback queue."
+        }
+    }
+
+    LaunchedEffect(queue, currentTrackIndex, queueRestored) {
+        if (queueRestored) {
+            delay(350)
+            persistPlaybackQueue()
+        }
+    }
+
+    LaunchedEffect(localPlayerPlaying, queueRevision) {
+        while (localPlayerPlaying) {
+            delay(2_000)
+            persistPlaybackQueue()
         }
     }
 
