@@ -32,7 +32,7 @@ data class FrequencyResponsePoint(
 data class EqUiState(
     val bands: List<EqBandUiState> = defaultEqBandUiStates(),
     val parametricBandIndices: List<Int> = emptyList(),
-    val selectedBandIndex: Int = 15,
+    val selectedBandIndex: Int = 18,
     val preampGainDb: Float = 0f,
     val bassGainDb: Float = 0f,
     val trebleGainDb: Float = 0f,
