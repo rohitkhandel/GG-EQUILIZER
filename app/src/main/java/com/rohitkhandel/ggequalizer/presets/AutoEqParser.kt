@@ -35,7 +35,7 @@ object AutoEqParser {
         RegexOption.IGNORE_CASE
     )
     private val parametricFilterRegex = Regex(
-        """(?im)^\s*Filter\s*\d*\s*:\s*(ON|OFF)\s+(PK|LS|HS)\s+Fc\s*=?\s*([0-9]+(?:\.[0-9]+)?)\s*Hz\s+Gain\s*=?\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*dB\s+Q\s*=?\s*([0-9]+(?:\.[0-9]+)?)"""
+        """(?im)^\s*Filter\s*\d*\s*:\s*(ON|OFF)\s+(PK|LS|HS|LP|HP|BP)\s+Fc\s*=?\s*([0-9]+(?:\.[0-9]+)?)\s*Hz\s+Gain\s*=?\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*dB\s+Q\s*=?\s*([0-9]+(?:\.[0-9]+)?)"""
     )
     private val preampRegex = Regex(
         """(?im)^\s*Preamp\s*:\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*dB"""
@@ -101,7 +101,7 @@ object AutoEqParser {
         }.sortedBy { it.frequencyHz }.toList()
 
         require(filters.isNotEmpty()) {
-            "No supported GraphicEQ data or PK/LS/HS Filter entries were found."
+            "No supported GraphicEQ data or PK/LS/HS/LP/HP/BP Filter entries were found."
         }
         val defaults = EqAudioProfile.defaults().bands
         val mapped = filters.take(NativeDspBridge.MAX_PARAMETRIC_BANDS).toMutableList()
