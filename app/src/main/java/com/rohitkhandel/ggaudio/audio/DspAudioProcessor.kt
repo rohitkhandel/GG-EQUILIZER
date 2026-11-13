@@ -53,6 +53,7 @@ class DspAudioProcessor(
 
     private var appliedSettings: DspSettingsSnapshot? = null
     private var pcmProcessor: ParametricEqualizerProcessor? = null
+    private var peakLimiter: PeakLimiter? = null
     private var scratch = FloatArray(0)
     private var configuredSampleRate = 0
     private var configuredChannels = 0
@@ -99,6 +100,7 @@ class DspAudioProcessor(
             rebuildProcessor(requested)
         }
         pcmProcessor?.processInPlace(scratch)
+        peakLimiter?.processInPlace(scratch)
 
         val output = replaceOutputBuffer(byteCount).order(ByteOrder.nativeOrder())
         for (index in 0 until sampleCount) {
@@ -117,11 +119,18 @@ class DspAudioProcessor(
             bands = settings.bands,
             preampDb = settings.preampDb
         )
+        peakLimiter = PeakLimiter(
+            sampleRateHz = configuredSampleRate,
+            channelCount = configuredChannels,
+            ceilingDb = -1f,
+            releaseMs = 80f
+        )
         appliedSettings = settings
     }
 
     override fun onReset() {
         pcmProcessor = null
+        peakLimiter = null
         appliedSettings = null
         scratch = FloatArray(0)
         configuredSampleRate = 0
