@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.DUMP" />
 
     <application
+        android:theme="@style/GGEqualizerTheme"
         android:allowBackup="false"
         android:label="GG Equalizer"
         android:icon="@mipmap/ic_launcher"
