@@ -32,6 +32,11 @@ public:
     bool setBand(std::size_t index, const EqualizerBand& band);
     bool setBandEnabled(std::size_t index, bool enabled);
     bool setTone(float bassGainDb, float trebleGainDb);
+    bool setToneParameters(
+        float bassFrequencyHz,
+        float bassQFactor,
+        float trebleFrequencyHz,
+        float trebleQFactor);
     bool setPreampGain(float gainDb);
     bool setLimiterParameters(const LimiterParameters& parameters);
     bool setDvcVolume(float linearGain);
@@ -61,6 +66,10 @@ private:
 
     float bassGainDb_{0.0F};
     float trebleGainDb_{0.0F};
+    float bassFrequencyHz_{85.0F};
+    float bassQFactor_{0.8F};
+    float trebleFrequencyHz_{10000.0F};
+    float trebleQFactor_{0.8F};
     float dvcVolume_{1.0F};
     float stereoWidthPercent_{100.0F};
     float stereoBalance_{0.0F};
