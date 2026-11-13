@@ -324,8 +324,19 @@ fun GgAudioApp() {
     }
 
     LaunchedEffect(localPlayerPlaying, queueRevision) {
-        while (localPlayerPlaying) {
-            delay(2_000)
+        if (!localPlayerPlaying) {
+            persistPlaybackQueue()
+        } else {
+            while (localPlayerPlaying) {
+                delay(2_000)
+                persistPlaybackQueue()
+            }
+        }
+    }
+
+    LaunchedEffect(playbackPositionMs, localPlayerPlaying, queueRevision) {
+        if (!localPlayerPlaying && queueRestored) {
+            delay(350)
             persistPlaybackQueue()
         }
     }
