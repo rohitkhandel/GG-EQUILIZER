@@ -19,8 +19,17 @@ class EqualizerNavigationTest {
     @Test
     fun homeRendersTenBandControls() {
         composeRule.onNodeWithText("Equalizer").fetchSemanticsNode()
-        composeRule.onNodeWithContentDescription("31 Hz gain").assertExists()
+        composeRule.onNodeWithContentDescription("31 Hz gain").fetchSemanticsNode()
         composeRule.onNodeWithContentDescription("16K Hz gain").assertExists()
+    }
+
+    @Test
+    fun playerScreenExplainsLocalDspPlayback() {
+        composeRule.onNodeWithTag("nav_player").performClick()
+        composeRule.onNodeWithText("LOCAL PCM PLAYBACK").assertIsDisplayed()
+        composeRule.onNodeWithText("OPEN AUDIO FILE").assertIsDisplayed()
+        composeRule.onNodeWithText("These controls process audio played inside GG Audio. They do not capture or modify unrelated apps.")
+            .assertExists()
     }
 
     @Test

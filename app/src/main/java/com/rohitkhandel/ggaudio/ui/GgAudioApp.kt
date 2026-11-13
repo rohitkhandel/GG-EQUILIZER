@@ -1,5 +1,8 @@
 package com.rohitkhandel.ggaudio.ui
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -14,6 +17,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -22,11 +26,13 @@ import androidx.compose.ui.unit.sp
 import com.rohitkhandel.ggaudio.audio.AudioBackendStatus
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
 import com.rohitkhandel.ggaudio.audio.GlobalAudioEffectsController
+import com.rohitkhandel.ggaudio.audio.LocalAudioPlayer
+import androidx.media3.common.Player
 import com.rohitkhandel.ggaudio.ui.theme.*
 import com.rohitkhandel.ggaudio.ui.theme.Surface as CardSurface
 
 private enum class AppTab(val label: String, val symbol: String) {
-    Equalizer("Equalizer", "≋"), Effects("Effects", "✦"), Presets("Presets", "▶"), Settings("Settings", "⚙")
+    Equalizer("Equalizer", "≋"), Player("Player", "▶"), Effects("Effects", "✦"), Presets("Presets", "▤"), Settings("Settings", "⚙")
 }
 
 @Composable
@@ -40,6 +46,54 @@ fun GgAudioApp() {
     var connecting by remember { mutableStateOf(false) }
     var backendStatus by remember {
         mutableStateOf(AudioBackendStatus(false, "Not connected. Tap Connect to check device support."))
+    }
+    var selectedTrack by remember { mutableStateOf<String?>(null) }
+    var localPlayerReady by remember { mutableStateOf(false) }
+    var localPlayerPlaying by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val localPlayer = remember(context) { LocalAudioPlayer(context) }
+    val audioPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+                // Some document providers grant temporary read access only.
+            }
+            selectedTrack = uri.lastPathSegment?.substringAfterLast('/') ?: "Selected audio"
+            localPlayerReady = false
+            localPlayerPlaying = false
+            localPlayer.load(uri)
+        }
+    }
+
+    DisposableEffect(localPlayer) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                localPlayerReady = playbackState == Player.STATE_READY
+                if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
+                    localPlayerPlaying = false
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                localPlayerPlaying = isPlaying
+            }
+        }
+        localPlayer.player.addListener(listener)
+        onDispose {
+            localPlayer.player.removeListener(listener)
+            localPlayer.close()
+        }
+    }
+
+    LaunchedEffect(bands, preamp) {
+        localPlayer.updateEqualizer(bands, preamp)
     }
 
     val controller = remember { GlobalAudioEffectsController() }
@@ -114,6 +168,19 @@ fun GgAudioApp() {
                     onPresetChange = { name, updated ->
                         presetName = name
                         bands = updated
+                    }
+                )
+                AppTab.Player -> LocalPlayerScreen(
+                    trackName = selectedTrack,
+                    ready = localPlayerReady,
+                    playing = localPlayerPlaying,
+                    onOpenAudio = { audioPicker.launch(arrayOf("audio/*")) },
+                    onPlayPause = {
+                        if (localPlayerPlaying) localPlayer.pause() else localPlayer.play()
+                    },
+                    onStop = {
+                        localPlayer.stop()
+                        localPlayerPlaying = false
                     }
                 )
                 AppTab.Effects -> EffectsScreen(
@@ -218,6 +285,107 @@ private fun AppHeader(
                         modifier = Modifier.padding(top = 3.dp)
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalPlayerScreen(
+    trackName: String?,
+    ready: Boolean,
+    playing: Boolean,
+    onOpenAudio: () -> Unit,
+    onPlayPause: () -> Unit,
+    onStop: () -> Unit
+) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 20.dp)) {
+        Text("LOCAL PCM PLAYBACK", color = Accent, fontSize = 9.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
+        Text("Player", color = TextPrimary, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
+        Text("Play a local audio file through GG Audio's software DSP.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+        Surface(
+            Modifier.fillMaxWidth().padding(top = 19.dp),
+            color = CardSurface,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Outline)
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text("NOW PLAYING", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    trackName ?: "No audio file selected",
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                Text(
+                    when {
+                        playing -> "PLAYING · SOFTWARE DSP ACTIVE"
+                        ready -> "READY · DSP ARMED"
+                        trackName != null -> "PREPARING AUDIO"
+                        else -> "CHOOSE A LOCAL FILE TO START"
+                    },
+                    color = if (ready) Success else TextMuted,
+                    fontSize = 8.sp,
+                    letterSpacing = .5.sp,
+                    modifier = Modifier.padding(top = 5.dp)
+                )
+                Button(
+                    onClick = onOpenAudio,
+                    modifier = Modifier.fillMaxWidth().padding(top = 17.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF633D25),
+                        contentColor = Color(0xFFFFC18B)
+                    )
+                ) {
+                    Text("OPEN AUDIO FILE", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    Button(
+                        onClick = onPlayPause,
+                        enabled = trackName != null,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(if (playing) "PAUSE" else "PLAY", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = onStop,
+                        enabled = trackName != null,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF303A47),
+                            contentColor = TextPrimary
+                        )
+                    ) {
+                        Text("STOP", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        Surface(
+            Modifier.fillMaxWidth().padding(top = 12.dp),
+            color = CardSurface,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Outline)
+        ) {
+            Column(Modifier.padding(15.dp)) {
+                Text("PROCESSING CHAIN", color = TextMuted, fontSize = 8.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold)
+                DiagnosticRow("10-band peaking EQ", "ENABLED")
+                DiagnosticRow("Software preamp", "ENABLED")
+                DiagnosticRow("PCM format", "16-bit")
+                Text(
+                    "These controls process audio played inside GG Audio. They do not capture or modify unrelated apps.",
+                    color = TextMuted,
+                    fontSize = 9.sp,
+                    lineHeight = 14.sp,
+                    modifier = Modifier.padding(top = 9.dp)
+                )
             }
         }
     }
