@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import android.os.SystemClock
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -256,7 +257,8 @@ fun StudioBottomDock(selected: String, accent: Color, onSelect: (String) -> Unit
             Column(
                 Modifier.weight(1f).fillMaxHeight().padding(vertical = 5.dp)
                     .clip(RoundedCornerShape(22.dp)).background(if (active) Color(0xFF30353D) else Color.Transparent)
-                    .clickable { onSelect(key) },
+                    .clickable { onSelect(key) }
+                    .testTag("dock-${key.lowercase(Locale.US)}"),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -381,7 +383,8 @@ private fun StudioModeChip(label: String, selected: Boolean, accent: Color, onCl
             .clip(RoundedCornerShape(9.dp))
             .background(if (selected) accent.copy(alpha = 0.16f) else StudioSurface)
             .border(1.dp, if (selected) accent.copy(alpha = 0.78f) else StudioLine, RoundedCornerShape(9.dp))
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .testTag("eq-mode-${label.lowercase(Locale.US)}"),
         contentAlignment = Alignment.Center
     ) {
         Text(label, color = if (selected) accent else StudioMuted, fontSize = 9.sp, fontWeight = FontWeight.Black)
