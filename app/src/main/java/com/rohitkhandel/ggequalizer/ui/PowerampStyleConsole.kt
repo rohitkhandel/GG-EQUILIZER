@@ -496,6 +496,11 @@ private fun StudioBandPanel(
     onDelete: () -> Unit
 ) {
     val edge = if (selected) Color(0xFFFFD36D) else StudioLine
+    val levelLabel = if (
+        band.filterType == NativeDspBridge.FILTER_LOW_PASS ||
+        band.filterType == NativeDspBridge.FILTER_HIGH_PASS ||
+        band.filterType == NativeDspBridge.FILTER_BAND_PASS
+    ) "TRIM" else "GAIN"
     Column(
         modifier = modifier.clip(RoundedCornerShape(16.dp))
             .background(if (selected) Color(0xFF1A2027) else Color(0xFF101419))
@@ -533,7 +538,7 @@ private fun StudioBandPanel(
                 value = band.gainDb,
                 valueRange = -15f..15f,
                 valueMode = valueMode,
-                label = "GAIN",
+                label = levelLabel,
                 accent = Color(0xFFFF6675),
                 selected = selected,
                 compact = false,
@@ -580,7 +585,7 @@ private fun StudioBandPanel(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            StudioValueBadge("GAIN", String.format(Locale.US, "%+.1f dB", band.gainDb))
+            StudioValueBadge(levelLabel, String.format(Locale.US, "%+.1f dB", band.gainDb))
             Box(
                 Modifier.size(24.dp).clip(CircleShape)
                     .background(if (band.enabled) Color(0xFF133E31) else Color(0xFF333A43))
