@@ -122,7 +122,7 @@ private fun PlaceholderScreen(title: String, subtitle: String) {
         Text("GG AUDIO  /  CONTROL", color = Accent, fontSize = 9.sp, letterSpacing = 1.5.sp)
         Text(title, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 7.dp))
         Text(subtitle, color = TextMuted, fontSize = 12.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 6.dp))
-        Surface(Modifier.fillMaxWidth().padding(top = 22.dp), color = Surface, shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Outline)) {
+        Surface(Modifier.fillMaxWidth().padding(top = 22.dp), color = CardSurface, shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Outline)) {
             Text("This section is intentionally staged. It will be wired to real app functionality before being marked complete.", color = TextMuted, fontSize = 12.sp, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
         }
     }
