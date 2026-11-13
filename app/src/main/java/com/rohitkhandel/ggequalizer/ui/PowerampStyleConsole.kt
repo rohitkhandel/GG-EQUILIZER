@@ -75,7 +75,7 @@ fun StudioTopBar(
     state: EqUiState,
     accent: Color,
     onPower: (Boolean) -> Unit,
-    onGraphicMode: () -> Unit,
+    onGraphicMode: (Int) -> Unit,
     onParametricMode: () -> Unit,
     onSave: () -> Unit,
     onImport: () -> Unit,
@@ -157,8 +157,8 @@ fun StudioTopBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                StudioModeChip("10", state.bandCount == 10, accent) { onGraphicMode() }
-                StudioModeChip("15", state.bandCount == 15, accent) { onGraphicMode() }
+                StudioModeChip("10", state.bandCount == 10, accent) { onGraphicMode(10) }
+                StudioModeChip("15", state.bandCount == 15, accent) { onGraphicMode(15) }
                 StudioModeChip("PARA", state.bandCount == 32, accent) { onParametricMode() }
             }
             Spacer(Modifier.weight(1f))
@@ -184,7 +184,7 @@ fun StudioTopBar(
             Box {
                 Text("⋮", color = StudioText, fontSize = 22.sp, modifier = Modifier.clickable { actionMenu = true }.padding(start = 9.dp, end = 2.dp))
                 DropdownMenu(expanded = actionMenu, onDismissRequest = { actionMenu = false }) {
-                    DropdownMenuItem(text = { Text("Graphic equalizer") }, onClick = { actionMenu = false; onGraphicMode() })
+                    DropdownMenuItem(text = { Text("Graphic equalizer") }, onClick = { actionMenu = false; onGraphicMode(10) })
                     DropdownMenuItem(text = { Text("Parametric equalizer") }, onClick = { actionMenu = false; onParametricMode() })
                     DropdownMenuItem(text = { Text("Save preset") }, onClick = { actionMenu = false; onSave() })
                     DropdownMenuItem(text = { Text("Import AutoEQ") }, onClick = { actionMenu = false; onImport() })
@@ -342,9 +342,7 @@ fun StudioEqualizerWorkspace(
             state = state,
             accent = accent,
             onPower = viewModel::setMasterEnabled,
-            onGraphicMode = {
-                viewModel.setBandCount(if (state.bandCount == 15) 15 else 10)
-            },
+            onGraphicMode = viewModel::setBandCount,
             onParametricMode = { viewModel.setBandCount(32) },
             onSave = onSave,
             onImport = onImport,
