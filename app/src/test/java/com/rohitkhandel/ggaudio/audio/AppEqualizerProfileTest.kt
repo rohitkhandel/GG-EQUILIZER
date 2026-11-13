@@ -55,6 +55,19 @@ class AppEqualizerProfileTest {
     }
 
     @Test
+    fun preampIsFoldedIntoSessionEqualizerBandGain() {
+        val settings = DspSettingsSnapshot(
+            bands = EqualizerDefaults.flat().mapIndexed { index, band ->
+                if (index == 1) band.copy(gainDb = 6f) else band
+            },
+            preampDb = -2.5f
+        )
+
+        assertEquals(-2.5f, AppEqualizerProfileResolver.gainAtFrequency(settings, 31), 0.0001f)
+        assertEquals(3.5f, AppEqualizerProfileResolver.gainAtFrequency(settings, 62), 0.0001f)
+    }
+
+    @Test
     fun resolvingOneAppDoesNotChangeAnotherAppsProfile() {
         val defaults = DspSettingsSnapshot(EqualizerDefaults.flat(), 0f)
         val music = DspSettingsSnapshot(

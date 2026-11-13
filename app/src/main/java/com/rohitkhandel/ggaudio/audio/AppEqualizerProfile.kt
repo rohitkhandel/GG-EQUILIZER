@@ -85,4 +85,28 @@ object AppEqualizerProfileResolver {
         defaultSettings: DspSettingsSnapshot,
         profiles: Map<String, DspSettingsSnapshot>
     ): DspSettingsSnapshot = profiles[packageName] ?: defaultSettings
+
+    /**
+     * AudioEffect's session Equalizer exposes band gains rather than a separate preamp.
+     * Fold the per-app preamp into each interpolated hardware-band gain.
+     */
+    fun gainAtFrequency(settings: DspSettingsSnapshot, frequencyHz: Int): Float {
+        if (settings.bands.isEmpty()) return settings.preampDb
+        val ordered = settings.bands.sortedBy { it.frequencyHz }
+        val interpolated = when {
+            frequencyHz <= ordered.first().frequencyHz -> ordered.first().gainDb
+            frequencyHz >= ordered.last().frequencyHz -> ordered.last().gainDb
+            else -> {
+                val upperIndex = ordered.indexOfFirst { it.frequencyHz >= frequencyHz }
+                val lower = ordered[upperIndex - 1]
+                val upper = ordered[upperIndex]
+                val frequency = kotlin.math.ln(frequencyHz.toDouble())
+                val lowerFrequency = kotlin.math.ln(lower.frequencyHz.toDouble())
+                val upperFrequency = kotlin.math.ln(upper.frequencyHz.toDouble())
+                val fraction = ((frequency - lowerFrequency) / (upperFrequency - lowerFrequency)).toFloat()
+                lower.gainDb + (upper.gainDb - lower.gainDb) * fraction
+            }
+        }
+        return interpolated + settings.preampDb
+    }
 }

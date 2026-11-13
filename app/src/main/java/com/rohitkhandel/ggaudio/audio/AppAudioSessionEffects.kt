@@ -134,7 +134,7 @@ class AppAudioSessionEffects(
                     val count = equalizer.numberOfBands.toInt()
                     for (index in 0 until count) {
                         val frequencyHz = (equalizer.getCenterFreq(index.toShort()) / 1000).coerceAtLeast(1)
-                        val gainDb = interpolateGain(settings.bands, frequencyHz)
+                        val gainDb = AppEqualizerProfileResolver.gainAtFrequency(settings, frequencyHz)
                         val millibels = (gainDb * 100f).roundToInt().coerceIn(minimum, maximum)
                         equalizer.setBandLevel(index.toShort(), millibels.toShort())
                     }
@@ -168,21 +168,6 @@ class AppAudioSessionEffects(
         AppAudioSessionStatus.update(sessions.values.mapTo(mutableSetOf()) { it.packageName })
     }
 
-    private fun interpolateGain(bands: List<EqualizerBand>, frequencyHz: Int): Float {
-        if (bands.isEmpty()) return 0f
-        val ordered = bands.sortedBy { it.frequencyHz }
-        if (frequencyHz <= ordered.first().frequencyHz) return ordered.first().gainDb
-        if (frequencyHz >= ordered.last().frequencyHz) return ordered.last().gainDb
-
-        val upperIndex = ordered.indexOfFirst { it.frequencyHz >= frequencyHz }
-        val lower = ordered[upperIndex - 1]
-        val upper = ordered[upperIndex]
-        val frequency = ln(frequencyHz.toDouble())
-        val lowerFrequency = ln(lower.frequencyHz.toDouble())
-        val upperFrequency = ln(upper.frequencyHz.toDouble())
-        val fraction = ((frequency - lowerFrequency) / (upperFrequency - lowerFrequency)).toFloat()
-        return lower.gainDb + (upper.gainDb - lower.gainDb) * fraction
-    }
 
     private fun <T : android.media.audiofx.AudioEffect> createOptionalEffect(factory: () -> T): T? {
         return try {

@@ -30,7 +30,7 @@ A private, offline-first native Android equalizer with an optional local audio t
 
 The ten-band EQ, preamp, software Bass Boost, Stereo Width and peak limiter are connected to audio played **inside GG Audio's local player**.
 
-For external apps, GG Audio listens for Android's standard audio-effect session broadcasts and attempts to attach insert effects to the announced session ID. This works only when the player sends those broadcasts and the device grants effect control. When a saved profile exists for that package, its EQ bands, preamp, Bass Boost and Stereo Width are applied to that session; otherwise the shared default settings are used. Saved profiles can be created, loaded for editing, updated and deleted in Settings. Editing a profile updates the external session when the profile is saved.
+For external apps, GG Audio listens for Android's standard audio-effect session broadcasts and attempts to attach insert effects to the announced session ID. This works only when the player sends those broadcasts and the device grants effect control. When a saved profile exists for that package, its EQ bands, preamp, Bass Boost and Stereo Width are applied to that session; the preamp is folded into the session Equalizer's hardware-band gains. Otherwise the shared default settings are used. Saved profiles can be created, loaded for editing, updated and deleted in Settings. Editing a profile updates the external session when the profile is saved.
 
 The legacy global AudioEffect adapter is best-effort only. Android's session-0 insert effects are deprecated and device vendors may reject them or restrict their control. No route is guaranteed on every device or player. Real behavior must be checked on the target phone.
 
