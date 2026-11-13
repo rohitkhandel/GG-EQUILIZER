@@ -1,6 +1,9 @@
 package com.rohitkhandel.ggequalizer.audio
 
+import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_BAND_PASS
+import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_HIGH_PASS
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_HIGH_SHELF
+import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_LOW_PASS
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_LOW_SHELF
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_PEAKING
 import org.junit.Assert.assertEquals
@@ -152,4 +155,72 @@ class EqResponseMathTest {
         val lows = EqResponseMath.profileGainDb(profile, 30f)
         assertTrue("Bass shelf cut/boost should affect the low end", lows > 2.5f)
     }
+    @Test
+    fun lowPassKeepsLowFrequenciesAndAttenuatesHighFrequencies() {
+        val passband = EqResponseMath.filterGainDb(
+            frequencyHz = 100f,
+            centerFrequencyHz = 1_000f,
+            gainDb = 0f,
+            qFactor = 0.707f,
+            filterType = FILTER_LOW_PASS
+        )
+        val stopband = EqResponseMath.filterGainDb(
+            frequencyHz = 8_000f,
+            centerFrequencyHz = 1_000f,
+            gainDb = 0f,
+            qFactor = 0.707f,
+            filterType = FILTER_LOW_PASS
+        )
+        assertTrue("Low-pass passband should remain close to 0 dB", passband > -0.5)
+        assertTrue("Low-pass stopband should be attenuated", stopband < -25.0)
+    }
+
+    @Test
+    fun highPassKeepsHighFrequenciesAndAttenuatesLowFrequencies() {
+        val stopband = EqResponseMath.filterGainDb(
+            frequencyHz = 100f,
+            centerFrequencyHz = 1_000f,
+            gainDb = 0f,
+            qFactor = 0.707f,
+            filterType = FILTER_HIGH_PASS
+        )
+        val passband = EqResponseMath.filterGainDb(
+            frequencyHz = 8_000f,
+            centerFrequencyHz = 1_000f,
+            gainDb = 0f,
+            qFactor = 0.707f,
+            filterType = FILTER_HIGH_PASS
+        )
+        assertTrue("High-pass stopband should be attenuated", stopband < -25.0)
+        assertTrue("High-pass passband should remain close to 0 dB", kotlin.math.abs(passband) < 0.5)
+    }
+
+    @Test
+    fun bandPassKeepsItsCenterAndAttenuatesBothSides() {
+        val low = EqResponseMath.filterGainDb(
+            frequencyHz = 100f,
+            centerFrequencyHz = 1_000f,
+            gainDb = 0f,
+            qFactor = 1f,
+            filterType = FILTER_BAND_PASS
+        )
+        val center = EqResponseMath.filterGainDb(
+            frequencyHz = 1_000f,
+            centerFrequencyHz = 1_000f,
+            gainDb = 0f,
+            qFactor = 1f,
+            filterType = FILTER_BAND_PASS
+        )
+        val high = EqResponseMath.filterGainDb(
+            frequencyHz = 10_000f,
+            centerFrequencyHz = 1_000f,
+            gainDb = 0f,
+            qFactor = 1f,
+            filterType = FILTER_BAND_PASS
+        )
+        assertTrue("Band-pass should keep the centre frequency", kotlin.math.abs(center) < 0.2)
+        assertTrue("Band-pass should attenuate the lower side", low < -15.0)
+        assertTrue("Band-pass should attenuate the upper side", high < -15.0)
+    }
+
 }
