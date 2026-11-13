@@ -824,14 +824,14 @@ private fun StudioSpectrumStrip(state: EqUiState, accent: Color, onToggle: () ->
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.width(76.dp).fillMaxHeight().clickable(onClick = onToggle).padding(start = 7.dp), verticalArrangement = Arrangement.Center) {
-            Text("VISUALIZER", color = StudioText, fontSize = 7.sp, fontWeight = FontWeight.Black)
-            Text(if (state.visualizerEnabled) "LIVE  ●" else "ENABLE", color = if (state.visualizerEnabled) Color(0xFF53DC96) else StudioMuted, fontSize = 6.sp, fontWeight = FontWeight.Bold)
+            Text("EQ RESPONSE", color = StudioText, fontSize = 7.sp, fontWeight = FontWeight.Black)
+            Text(if (state.visualizerEnabled) "LIVE SPECTRUM  ●" else "RESPONSE", color = if (state.visualizerEnabled) Color(0xFF53DC96) else StudioMuted, fontSize = 6.sp, fontWeight = FontWeight.Bold)
         }
         Box(Modifier.weight(1f).fillMaxHeight().padding(end = 5.dp).clip(RoundedCornerShape(8.dp))) {
             FrequencyResponseCanvas(
                 points = state.responsePoints, bands = state.bands, selectedBandIndex = state.selectedBandIndex,
                 onBandSelected = {}, spectrumBars = if (state.visualizerEnabled) state.spectrumBars else emptyList(),
-                accent = accent, modifier = Modifier.fillMaxSize(), interactive = false, spectrumStyle = state.visualizerStyle, showGrid = false
+                accent = accent, modifier = Modifier.fillMaxSize(), interactive = false, spectrumStyle = state.visualizerStyle, showGrid = true
             )
         }
     }
@@ -843,12 +843,12 @@ private fun StudioBassTrebleRow(state: EqUiState, viewModel: EqViewModel) {
         RotaryKnob(
             label = "BASS", value = ((state.bassGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f, defaultValue = 0.5f,
             valueText = studioToneValueText(state.bassGainDb, state.toneValueMode), onValueChange = { viewModel.setBassGain(it * 24f - 12f) },
-            accent = StudioRed, knobSize = 82.dp, modifier = Modifier.weight(1f)
+            accent = StudioRed, knobSize = 64.dp, modifier = Modifier.weight(1f)
         )
         RotaryKnob(
             label = "TREBLE", value = ((state.trebleGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f, defaultValue = 0.5f,
             valueText = studioToneValueText(state.trebleGainDb, state.toneValueMode), onValueChange = { viewModel.setTrebleGain(it * 24f - 12f) },
-            accent = StudioRed, knobSize = 82.dp, modifier = Modifier.weight(1f)
+            accent = StudioRed, knobSize = 64.dp, modifier = Modifier.weight(1f)
         )
     }
 }
