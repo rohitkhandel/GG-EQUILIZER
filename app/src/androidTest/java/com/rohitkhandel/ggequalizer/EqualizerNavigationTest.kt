@@ -8,6 +8,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge
 import com.rohitkhandel.ggequalizer.ui.EqViewModel
+import com.rohitkhandel.ggequalizer.ui.activeBandIndices
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -58,6 +59,34 @@ class EqualizerNavigationTest {
         composeRule.runOnIdle {
             assertEquals("Parametric chip must select the 32-slot editor", 32, viewModel.uiState.value.bandCount)
         }
+    }
+
+    @Test
+    fun selectedFaderAlwaysBelongsToTheActiveGraphicMode() {
+        val viewModel = ViewModelProvider(composeRule.activity)[EqViewModel::class.java]
+
+        composeRule.runOnUiThread {
+            viewModel.selectBand(15)
+            viewModel.setBandCount(10)
+            assertTrue(
+                "10-band mode must keep the selected fader visible",
+                viewModel.uiState.value.selectedBandIndex in viewModel.uiState.value.activeBandIndices()
+            )
+
+            viewModel.selectBand(15)
+            viewModel.setBandCount(15)
+            assertTrue(
+                "15-band mode must keep the selected fader visible",
+                viewModel.uiState.value.selectedBandIndex in viewModel.uiState.value.activeBandIndices()
+            )
+
+            viewModel.resetAll()
+            assertTrue(
+                "Reset must restore a visible selection in the default 10-band mode",
+                viewModel.uiState.value.selectedBandIndex in viewModel.uiState.value.activeBandIndices()
+            )
+        }
+        composeRule.waitForIdle()
     }
 
     @Test
