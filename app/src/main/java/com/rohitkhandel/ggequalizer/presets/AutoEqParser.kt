@@ -83,6 +83,9 @@ object AutoEqParser {
             val type = when (match.groupValues[2].uppercase(Locale.US)) {
                 "LS" -> NativeDspBridge.FILTER_LOW_SHELF
                 "HS" -> NativeDspBridge.FILTER_HIGH_SHELF
+                "LP" -> NativeDspBridge.FILTER_LOW_PASS
+                "HP" -> NativeDspBridge.FILTER_HIGH_PASS
+                "BP" -> NativeDspBridge.FILTER_BAND_PASS
                 else -> NativeDspBridge.FILTER_PEAKING
             }
             val frequency = match.groupValues[3].toFloatOrNull() ?: return@mapNotNull null
