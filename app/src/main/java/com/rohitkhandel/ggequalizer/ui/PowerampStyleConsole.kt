@@ -86,85 +86,158 @@ fun StudioTopBar(
     var actionMenu by rememberSaveable { mutableStateOf(false) }
     val presetName = state.presets.firstOrNull { it.presetId == state.selectedPresetId }?.presetName ?: "Flat"
 
-    Row(
-        modifier = Modifier.fillMaxWidth().height(48.dp).background(StudioBlack).padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+        Modifier.fillMaxWidth().background(StudioBlack)
+            .padding(start = 12.dp, end = 12.dp, top = 5.dp, bottom = 3.dp)
     ) {
         Row(
-            modifier = Modifier.width(75.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp)
+            Modifier.fillMaxWidth().height(46.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                Modifier.size(31.dp).clip(RoundedCornerShape(9.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF2A3038), Color(0xFF101318))))
-                    .border(1.dp, Color(0xFF46505B), RoundedCornerShape(9.dp)),
-                contentAlignment = Alignment.Center
+            Row(
+                Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    listOf(7, 14, 10).forEachIndexed { i, h ->
-                        Box(Modifier.width(3.dp).height(h.dp).clip(CircleShape).background(if (i == 1) accent else Color.LightGray))
+                Box(
+                    Modifier.size(37.dp).clip(RoundedCornerShape(11.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF5AE7FA), Color(0xFF147E9B))))
+                        .border(1.dp, Color(0xFF8CEEFF).copy(alpha = 0.28f), RoundedCornerShape(11.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("GG", color = Color(0xFF06131A), fontSize = 14.sp, fontWeight = FontWeight.Black, letterSpacing = (-1).sp)
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("GG EQUALIZER", color = StudioText, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.35.sp, maxLines = 1)
+                    Text("PRECISION AUDIO ENGINE", color = StudioMuted, fontSize = 6.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.15.sp, maxLines = 1)
+                }
+            }
+
+            Box {
+                Column(
+                    Modifier.clip(RoundedCornerShape(12.dp)).background(StudioSurface)
+                        .border(1.dp, StudioLine, RoundedCornerShape(12.dp))
+                        .clickable { presetMenu = true }
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(presetName.uppercase(Locale.US), color = accent, fontSize = 8.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("PRESET  ▾", color = StudioMuted, fontSize = 6.sp, letterSpacing = 0.8.sp)
+                }
+                DropdownMenu(expanded = presetMenu, onDismissRequest = { presetMenu = false }) {
+                    state.presets.forEach { preset ->
+                        DropdownMenuItem(
+                            text = { Text(preset.presetName) },
+                            onClick = { presetMenu = false; onSelectPreset(preset) }
+                        )
                     }
                 }
             }
-            Text("GG", color = StudioText, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 0.6.sp)
-        }
 
-        Box(
-            Modifier.size(31.dp).clip(CircleShape)
-                .background(if (state.masterEnabled) accent.copy(alpha = 0.16f) else StudioSurface)
-                .border(1.dp, if (state.masterEnabled) accent else StudioLine, CircleShape)
-                .clickable { onPower(!state.masterEnabled) },
-            contentAlignment = Alignment.Center
-        ) {
-            Text("⏻", color = if (state.masterEnabled) accent else StudioMuted, fontSize = 17.sp)
-        }
-
-        Spacer(Modifier.weight(1f))
-        Box {
-            Column(
-                Modifier.clip(RoundedCornerShape(18.dp)).background(StudioSurface)
-                    .border(1.dp, Color(0xFF363E48), RoundedCornerShape(18.dp))
-                    .clickable { presetMenu = true }.padding(horizontal = 12.dp, vertical = 5.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Spacer(Modifier.width(8.dp))
+            Row(
+                Modifier.clip(RoundedCornerShape(18.dp))
+                    .background(if (state.masterEnabled) accent.copy(alpha = 0.13f) else StudioSurface)
+                    .border(1.dp, if (state.masterEnabled) accent.copy(alpha = 0.68f) else StudioLine, RoundedCornerShape(18.dp))
+                    .clickable { onPower(!state.masterEnabled) }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(presetName.uppercase(Locale.US), color = accent, fontSize = 9.sp, fontWeight = FontWeight.Black, maxLines = 1)
-                Text("PRESET  ▾", color = StudioMuted, fontSize = 6.sp, letterSpacing = 1.sp)
+                Box(
+                    Modifier.size(7.dp).clip(CircleShape)
+                        .background(if (state.masterEnabled) accent else StudioMuted)
+                )
+                Text(if (state.masterEnabled) "ON" else "OFF", color = if (state.masterEnabled) accent else StudioMuted, fontSize = 8.sp, fontWeight = FontWeight.Black, letterSpacing = 0.8.sp)
             }
-            DropdownMenu(expanded = presetMenu, onDismissRequest = { presetMenu = false }) {
-                state.presets.forEach { preset ->
-                    DropdownMenuItem(
-                        text = { Text(preset.presetName) },
-                        onClick = { presetMenu = false; onSelectPreset(preset) }
-                    )
+        }
+
+        Row(
+            Modifier.fillMaxWidth().height(37.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                StudioModeChip("10", state.bandCount == 10, accent) { onGraphicMode() }
+                StudioModeChip("15", state.bandCount == 15, accent) { onGraphicMode() }
+                StudioModeChip("PARA", state.bandCount == 32, accent) { onParametricMode() }
+            }
+            Spacer(Modifier.weight(1f))
+            Row(
+                Modifier.clip(RoundedCornerShape(15.dp)).background(StudioSurface)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Box(
+                    Modifier.size(6.dp).clip(CircleShape)
+                        .background(if (state.activeSessionCount > 0) Color(0xFF50D890) else StudioMuted)
+                )
+                Text(
+                    if (state.activeSessionCount > 0) studioPlayerName(state.activePlayerName) else "NO PLAYER",
+                    color = if (state.activeSessionCount > 0) StudioText else StudioMuted,
+                    fontSize = 7.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Box {
+                Text("⋮", color = StudioText, fontSize = 22.sp, modifier = Modifier.clickable { actionMenu = true }.padding(start = 9.dp, end = 2.dp))
+                DropdownMenu(expanded = actionMenu, onDismissRequest = { actionMenu = false }) {
+                    DropdownMenuItem(text = { Text("Graphic equalizer") }, onClick = { actionMenu = false; onGraphicMode() })
+                    DropdownMenuItem(text = { Text("Parametric equalizer") }, onClick = { actionMenu = false; onParametricMode() })
+                    DropdownMenuItem(text = { Text("Save preset") }, onClick = { actionMenu = false; onSave() })
+                    DropdownMenuItem(text = { Text("Import AutoEQ") }, onClick = { actionMenu = false; onImport() })
+                    DropdownMenuItem(text = { Text("Reset equalizer") }, onClick = { actionMenu = false; onReset() })
                 }
             }
         }
-        Spacer(Modifier.weight(1f))
+    }
+}
 
-        Row(
-            Modifier.clip(RoundedCornerShape(18.dp)).background(StudioSurface).padding(horizontal = 7.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
+@Composable
+private fun StudioSessionSummary(state: EqUiState, accent: Color) {
+    val connected = state.activeSessionCount > 0
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 11.dp, vertical = 4.dp)
+            .height(46.dp).clip(RoundedCornerShape(13.dp))
+            .background(Color(0xFF111820))
+            .border(1.dp, Color(0xFF27343F), RoundedCornerShape(13.dp))
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(30.dp).clip(RoundedCornerShape(9.dp))
+                .background(if (connected) accent.copy(alpha = 0.13f) else StudioSurface),
+            contentAlignment = Alignment.Center
         ) {
-            Box(Modifier.size(6.dp).background(if (state.activePlayerName != "No player detected") Color(0xFF50D890) else StudioMuted, CircleShape))
+            Text("♫", color = if (connected) accent else StudioMuted, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.width(9.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                studioPlayerName(state.activePlayerName),
-                color = if (state.activePlayerName == "No player detected") StudioMuted else StudioText,
-                fontSize = 7.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis
+                if (connected) "ACTIVE AUDIO SESSION" else "AUDIO SESSION",
+                color = StudioText,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.9.sp,
+                maxLines = 1
+            )
+            Text(
+                if (connected) state.attachmentSummary else "Start audio in a player to connect the equalizer",
+                color = StudioMuted,
+                fontSize = 7.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
-
-        Box {
-            Text("⋮", color = StudioText, fontSize = 22.sp, modifier = Modifier.clickable { actionMenu = true }.padding(start = 10.dp))
-            DropdownMenu(expanded = actionMenu, onDismissRequest = { actionMenu = false }) {
-                DropdownMenuItem(text = { Text("Graphic equalizer") }, onClick = { actionMenu = false; onGraphicMode() })
-                DropdownMenuItem(text = { Text("Parametric equalizer") }, onClick = { actionMenu = false; onParametricMode() })
-                DropdownMenuItem(text = { Text("Save preset") }, onClick = { actionMenu = false; onSave() })
-                DropdownMenuItem(text = { Text("Import AutoEQ") }, onClick = { actionMenu = false; onImport() })
-                DropdownMenuItem(text = { Text("Reset equalizer") }, onClick = { actionMenu = false; onReset() })
-            }
-        }
+        Text(
+            if (connected) "${state.activeSessionCount} ACTIVE" else "WAITING",
+            color = if (connected) Color(0xFF50D890) else StudioMuted,
+            fontSize = 7.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 0.5.sp
+        )
     }
 }
 
@@ -278,7 +351,7 @@ fun StudioEqualizerWorkspace(
             onReset = onReset,
             onSelectPreset = viewModel::applyPreset
         )
-        StudioConsoleModeBar(state, viewModel, accent)
+        StudioSessionSummary(state, accent)
         Box(Modifier.fillMaxWidth().weight(1f)) {
             StudioBandWorkspace(state, viewModel, accent)
         }
