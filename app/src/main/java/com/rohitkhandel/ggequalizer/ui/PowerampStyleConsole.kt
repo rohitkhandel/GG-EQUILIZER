@@ -170,7 +170,7 @@ fun StudioTopBar(
 
 @Composable
 fun StudioBottomDock(selected: String, accent: Color, onSelect: (String) -> Unit) {
-    val destinations = listOf("EQUALIZER", "TONE", "SETTINGS")
+    val destinations = listOf("EQUALIZER", "TONE", "PRESETS", "SETTINGS")
     Row(
         Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 9.dp, vertical = 4.dp)
             .height(54.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF17191D))
@@ -188,6 +188,19 @@ fun StudioBottomDock(selected: String, accent: Color, onSelect: (String) -> Unit
                 verticalArrangement = Arrangement.Center
             ) {
                 StudioDockGlyph(key, active, accent)
+                Text(
+                    when (key) {
+                        "EQUALIZER" -> "EQ"
+                        "TONE" -> "TONE"
+                        "PRESETS" -> "PRESETS"
+                        else -> "SETTINGS"
+                    },
+                    color = if (active) accent else Color(0xFF8B929A),
+                    fontSize = 6.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 0.15.sp,
+                    maxLines = 1
+                )
                 Box(Modifier.padding(top = 1.dp).width(if (active) 12.dp else 3.dp).height(2.dp).clip(CircleShape).background(if (active) accent else Color.Transparent))
             }
         }
@@ -818,16 +831,16 @@ private fun StudioSpectrumStrip(state: EqUiState, accent: Color, onToggle: () ->
 
 @Composable
 private fun StudioBassTrebleRow(state: EqUiState, viewModel: EqViewModel) {
-    Row(Modifier.fillMaxWidth().height(139.dp).padding(horizontal = 8.dp, vertical = 2.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().height(104.dp).padding(horizontal = 8.dp, vertical = 2.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         RotaryKnob(
             label = "BASS", value = ((state.bassGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f, defaultValue = 0.5f,
             valueText = studioToneValueText(state.bassGainDb, state.toneValueMode), onValueChange = { viewModel.setBassGain(it * 24f - 12f) },
-            accent = StudioRed, knobSize = 108.dp, modifier = Modifier.weight(1f)
+            accent = StudioRed, knobSize = 82.dp, modifier = Modifier.weight(1f)
         )
         RotaryKnob(
             label = "TREBLE", value = ((state.trebleGainDb + 12f) / 24f).coerceIn(0f, 1f), valueRange = 0f..1f, defaultValue = 0.5f,
             valueText = studioToneValueText(state.trebleGainDb, state.toneValueMode), onValueChange = { viewModel.setTrebleGain(it * 24f - 12f) },
-            accent = StudioRed, knobSize = 108.dp, modifier = Modifier.weight(1f)
+            accent = StudioRed, knobSize = 82.dp, modifier = Modifier.weight(1f)
         )
     }
 }
