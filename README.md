@@ -1,10 +1,10 @@
 # GG Audio
 
-A private, offline-first native Android audio player and equalizer. The goal is a polished Poweramp-inspired experience with original UI and DSP implementation.
+A private, offline-first native Android equalizer with an optional local audio test player. The goal is a polished Poweramp Equalizer-inspired experience with original UI and DSP implementation.
 
 ## Current implementation
 
-**Phase 3 — Local playback DSP safety and quality**
+**Phase 4 — Local DSP and Android app-session integration**
 
 - Native Kotlin + Jetpack Compose app (no WebView).
 - Android 8.0+ baseline (minSdk 26).
@@ -18,7 +18,8 @@ A private, offline-first native Android audio player and equalizer. The goal is 
 - Adding files appends unique tracks to the current queue without rebuilding or restarting the active song; queue can also be cleared.
 - Embedded track title, artist, album and duration tags are read locally when available; filenames remain the fallback.
 - The now-playing panel, queue and media-session metadata show embedded artist/album tags when available.
-- Optional Android global Equalizer, BassBoost and Virtualizer adapter with device capability checks.
+- Legacy Android global Equalizer route (session 0), retained only as a device-dependent fallback.
+- Session-bound Equalizer, BassBoost and Virtualizer routing for compatible players that broadcast Android's standard audio-effect session open/close actions; active package names appear in Settings.
 - Custom equalizer presets can be saved, applied and deleted using on-device DataStore storage.
 - Active EQ curve, preamp, and optional effect levels are restored and saved automatically on-device.
 - The local playback queue, selected track and last position are restored from on-device storage; playback does not auto-start.
@@ -26,9 +27,11 @@ A private, offline-first native Android audio player and equalizer. The goal is 
 
 ## Important audio scope
 
-The ten-band EQ, preamp, software Bass Boost, Stereo Width and peak limiter are connected to audio played **inside GG Audio's local player**. They do not capture audio from unrelated apps.
+The ten-band EQ, preamp, software Bass Boost, Stereo Width and peak limiter are connected to audio played **inside GG Audio's local player**.
 
-The global AudioEffect adapter is best-effort only. Android's session-0 insert effects are deprecated and device vendors may reject them or restrict their control. A positive connection result is not a promise that every third-party app's output is processed. Real behavior must be checked on the target phone.
+For external apps, GG Audio listens for Android's standard audio-effect session broadcasts and attempts to attach insert effects to the announced session ID. This works only when the player sends those broadcasts and the device grants effect control. External sessions currently use the active shared EQ/effects values; independent saved profiles per app are not implemented yet.
+
+The legacy global AudioEffect adapter is best-effort only. Android's session-0 insert effects are deprecated and device vendors may reject them or restrict their control. No route is guaranteed on every device or player. Real behavior must be checked on the target phone.
 
 The PCM adapter currently accepts 16-bit PCM. Supported file formats and codecs depend on Media3 and the Android device's installed decoders. The limiter is a sample-peak safety stage, not a look-ahead true-peak limiter.
 
@@ -53,7 +56,7 @@ Run gradle --no-daemon assembleDebug and gradle --no-daemon testDebugUnitTest fr
 
 ## Planned next work
 
-- Searchable music library with artist/album grouping and queue removal/reordering.
-- Audit Media3 decoder compatibility and clearer playback error recovery across local file types.
+- Independent saved equalizer/effect profiles for each supported external app.
+- Verify session-broadcast compatibility and control ownership on the target phone.
 - Physical-device audio checks, then CPU, latency and battery tuning.
-- Decide whether limiter controls belong in the UI after listening tests.
+- Secondary local-player library improvements after the equalizer engine is stable.

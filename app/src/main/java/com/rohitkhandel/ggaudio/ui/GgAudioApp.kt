@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.rohitkhandel.ggaudio.audio.AudioBackendStatus
 import com.rohitkhandel.ggaudio.audio.AudioMetadataReader
 import com.rohitkhandel.ggaudio.audio.AudioSettingsSnapshot
+import com.rohitkhandel.ggaudio.audio.AppAudioSessionStatus
 import com.rohitkhandel.ggaudio.audio.EqualizerBand
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
 import com.rohitkhandel.ggaudio.audio.GlobalAudioEffectsController
@@ -100,6 +101,7 @@ fun GgAudioApp() {
     var queueRestored by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val activeExternalAudioApps by AppAudioSessionStatus.activePackages.collectAsState()
     val presetRepository = remember(context) { SavedEqualizerPresetRepository(context) }
     val savedPresets by presetRepository.presets.collectAsState(initial = emptyList())
     val presetScope = rememberCoroutineScope()
@@ -577,7 +579,7 @@ fun GgAudioApp() {
                         }
                     }
                 )
-                AppTab.Settings -> SettingsScreen(backendStatus, settingsStatus)
+                AppTab.Settings -> SettingsScreen(backendStatus, settingsStatus, activeExternalAudioApps)
             }
         }
     }
@@ -645,7 +647,7 @@ private fun AppHeader(
             Spacer(Modifier.weight(1f))
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    if (status.connected) "SYSTEM EQ ATTACHED" else "LOCAL DSP READY",
+                    if (status.connected) "LEGACY EQ ATTACHED" else "LOCAL DSP READY",
                     color = if (status.connected) Success else Accent,
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold
@@ -664,10 +666,10 @@ private fun AppHeader(
                     Text("♫", color = Accent, fontSize = 23.sp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("System output", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Legacy global EQ", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (status.connected) "${status.hardwareBandCount} device EQ bands detected"
-                            else "Check global audio-effect support",
+                            if (status.connected) "${status.hardwareBandCount} session-0 EQ bands attached"
+                            else "Session 0 · device-dependent",
                             color = TextMuted,
                             fontSize = 9.sp
                         )
@@ -938,7 +940,7 @@ private fun LocalPlayerScreen(
                 DiagnosticRow("Peak limiter", "-1 dBFS")
                 DiagnosticRow("PCM format", "16-bit")
                 Text(
-                    "These controls process audio played inside GG Audio. They do not capture or modify unrelated apps.",
+                    "Software DSP processes GG Audio playback. Compatible external players may receive separate session-bound Android effects.",
                     color = TextMuted,
                     fontSize = 9.sp,
                     lineHeight = 14.sp,
@@ -960,7 +962,7 @@ private fun EffectsScreen(
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 20.dp)) {
         Text("SPATIAL & DYNAMIC", color = Accent, fontSize = 9.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
         Text("Sound effects", color = TextPrimary, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
-        Text("Software bass and stereo processing for GG Audio playback.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+        Text("Software bass and stereo processing for GG Audio, plus optional supported app sessions.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
         Surface(
             Modifier.fillMaxWidth().padding(top = 19.dp),
             color = CardSurface,
@@ -986,7 +988,7 @@ private fun EffectsScreen(
             }
         }
         Text(
-            "Both controls are processed in GG Audio's PCM pipeline. They do not modify audio from unrelated apps; the optional system EQ connection is separate.",
+            "Inside GG Audio these run in the PCM chain. Compatible external players can receive session-bound Android effects when they publish a session ID and the device grants control.",
             color = TextMuted,
             fontSize = 9.sp,
             lineHeight = 14.sp,
@@ -1021,7 +1023,11 @@ private fun EffectControl(
 }
 
 @Composable
-private fun SettingsScreen(status: AudioBackendStatus, settingsStatus: String) {
+private fun SettingsScreen(
+    status: AudioBackendStatus,
+    settingsStatus: String,
+    activeExternalAudioApps: Set<String>
+) {
     Column(Modifier.fillMaxSize().padding(22.dp)) {
         Text("SYSTEM DIAGNOSTICS", color = Accent, fontSize = 9.sp, letterSpacing = 1.5.sp)
         Text("Settings", color = TextPrimary, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
@@ -1032,8 +1038,21 @@ private fun SettingsScreen(status: AudioBackendStatus, settingsStatus: String) {
             border = BorderStroke(1.dp, Outline)
         ) {
             Column(Modifier.padding(15.dp)) {
-                DiagnosticRow("Global Equalizer", if (status.connected) "ATTACHED" else "NOT CONNECTED")
+                DiagnosticRow("Legacy global EQ · session 0", if (status.connected) "ATTACHED" else "NOT CONNECTED")
+                DiagnosticRow(
+                    "Supported player sessions",
+                    if (activeExternalAudioApps.isEmpty()) "WAITING" else "${activeExternalAudioApps.size} ACTIVE"
+                )
                 DiagnosticRow("Hardware EQ bands", if (status.connected) status.hardwareBandCount.toString() else "—")
+                if (activeExternalAudioApps.isNotEmpty()) {
+                    Text(
+                        activeExternalAudioApps.sorted().joinToString(),
+                        color = TextMuted,
+                        fontSize = 8.sp,
+                        lineHeight = 12.sp,
+                        modifier = Modifier.padding(top = 7.dp)
+                    )
+                }
                 DiagnosticRow("BassBoost", if (status.bassBoostAvailable) "AVAILABLE" else "NOT AVAILABLE")
                 DiagnosticRow("Virtualizer", if (status.virtualizerAvailable) "AVAILABLE" else "NOT AVAILABLE")
                 Text(status.message, color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 12.dp))

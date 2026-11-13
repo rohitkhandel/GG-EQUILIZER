@@ -5,8 +5,21 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.Virtualizer
 import java.io.Closeable
 import java.util.concurrent.Executors
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.ln
 import kotlin.math.roundToInt
+
+object AppAudioSessionStatus {
+    private val mutableActivePackages = MutableStateFlow<Set<String>>(emptySet())
+
+    val activePackages: StateFlow<Set<String>> = mutableActivePackages.asStateFlow()
+
+    internal fun update(packages: Set<String>) {
+        mutableActivePackages.value = packages
+    }
+}
 
 /**
  * Holds insert effects for external players that explicitly announce their audio sessions
@@ -45,7 +58,11 @@ class AppAudioSessionEffects(
                 applySettings(previous, latestSettings)
                 return@dispatch
             }
-            previous?.let(::releaseSession)
+            if (previous != null) {
+                sessions.remove(sessionId)
+                releaseSession(previous)
+                publishActivePackages()
+            }
 
             val equalizer = try {
                 Equalizer(sessionId, 0)
@@ -68,6 +85,7 @@ class AppAudioSessionEffects(
                 virtualizer = virtualizer
             )
             sessions[sessionId] = active
+            publishActivePackages()
             applySettings(active, latestSettings)
         }
     }
@@ -79,6 +97,7 @@ class AppAudioSessionEffects(
             if (active.packageName == packageName) {
                 sessions.remove(sessionId)
                 releaseSession(active)
+                publishActivePackages()
             }
         }
     }
@@ -131,6 +150,10 @@ class AppAudioSessionEffects(
                 }
             }
         }
+    }
+
+    private fun publishActivePackages() {
+        AppAudioSessionStatus.update(sessions.values.mapTo(mutableSetOf()) { it.packageName })
     }
 
     private fun interpolateGain(bands: List<EqualizerBand>, frequencyHz: Int): Float {
@@ -187,6 +210,7 @@ class AppAudioSessionEffects(
             worker.execute {
                 sessions.values.toList().forEach(::releaseSession)
                 sessions.clear()
+                publishActivePackages()
             }
         } catch (_: java.util.concurrent.RejectedExecutionException) {
         }
