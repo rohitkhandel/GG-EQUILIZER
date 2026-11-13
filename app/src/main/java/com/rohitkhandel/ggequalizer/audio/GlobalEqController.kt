@@ -244,6 +244,7 @@ object GlobalEqController {
                 trebleFrequencyHz = trebleFrequencyHz.coerceIn(4_000f, 16_000f),
                 trebleQFactor = trebleQFactor.coerceIn(0.5f, 2f)
             )
+            if (nativeHandle == 0L) ensureNativeEngineLocked() else syncNativeLocked()
             sessions.values.forEach(::applyProfileLocked)
         }
         publishSnapshot()
@@ -397,6 +398,13 @@ object GlobalEqController {
                 )
             }
             NativeDspBridge.nativeSetTone(handle, profile.bassGainDb, profile.trebleGainDb)
+            NativeDspBridge.nativeSetToneParameters(
+                handle,
+                profile.bassFrequencyHz,
+                profile.bassQFactor,
+                profile.trebleFrequencyHz,
+                profile.trebleQFactor
+            )
             NativeDspBridge.nativeSetPreampGain(handle, effectivePreampDbLocked())
             NativeDspBridge.nativeSetStereoWidthPercent(handle, profile.stereoWidthPercent)
             NativeDspBridge.nativeSetStereoBalance(handle, profile.stereoBalance)
@@ -658,7 +666,7 @@ data class EqBandParameter(
         frequencyHz = frequencyHz.takeIf(Float::isFinite)?.coerceIn(20f, 20_000f) ?: 1_000f,
         gainDb = gainDb.takeIf(Float::isFinite)?.coerceIn(-24f, 24f) ?: 0f,
         qFactor = qFactor.takeIf(Float::isFinite)?.coerceIn(0.1f, 12f) ?: 1f,
-        filterType = filterType.coerceIn(0, 2)
+        filterType = filterType.coerceIn(NativeDspBridge.FILTER_PEAKING, NativeDspBridge.FILTER_BAND_PASS)
     )
 }
 
