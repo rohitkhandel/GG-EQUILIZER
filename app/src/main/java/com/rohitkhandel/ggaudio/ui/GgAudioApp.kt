@@ -670,12 +670,15 @@ private fun AppHeader(
 @Composable
 private fun LocalPlayerScreen(
     trackName: String?,
+    artistName: String?,
+    albumName: String?,
     ready: Boolean,
     playing: Boolean,
     positionMs: Long,
     durationMs: Long,
     playbackError: String?,
     queueNames: List<String>,
+    queueArtists: List<String?>,
     currentTrackIndex: Int,
     onOpenAudio: () -> Unit,
     onSelectTrack: (Int) -> Unit,
@@ -687,6 +690,10 @@ private fun LocalPlayerScreen(
 ) {
     var seekFraction by remember(trackName) { mutableFloatStateOf(0f) }
     var scrubbing by remember { mutableStateOf(false) }
+    val metadataLine = listOfNotNull(
+        artistName?.takeIf { it.isNotBlank() },
+        albumName?.takeIf { it.isNotBlank() }
+    ).joinToString("  •  ")
     val safeDuration = durationMs.coerceAtLeast(1L)
     LaunchedEffect(positionMs, durationMs, scrubbing) {
         if (!scrubbing) {
@@ -713,6 +720,15 @@ private fun LocalPlayerScreen(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(top = 8.dp)
                 )
+                if (metadataLine.isNotBlank()) {
+                    Text(
+                        metadataLine,
+                        color = TextMuted,
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        modifier = Modifier.padding(top = 5.dp)
+                    )
+                }
                 Text(
                     when {
                         playing -> "PLAYING · SOFTWARE DSP ACTIVE"
@@ -827,13 +843,27 @@ private fun LocalPlayerScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text((index + 1).toString().padStart(2, '0'), color = TextMuted, fontSize = 8.sp)
-                                Text(
-                                    name,
-                                    color = if (index == currentTrackIndex) Accent else TextPrimary,
-                                    fontSize = 10.sp,
-                                    maxLines = 1,
+                                Column(
                                     modifier = Modifier.weight(1f).padding(start = 9.dp)
-                                )
+                                ) {
+                                    Text(
+                                        name,
+                                        color = if (index == currentTrackIndex) Accent else TextPrimary,
+                                        fontSize = 10.sp,
+                                        maxLines = 1
+                                    )
+                                    queueArtists.getOrNull(index)
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?.let { artist ->
+                                            Text(
+                                                artist,
+                                                color = TextMuted,
+                                                fontSize = 8.sp,
+                                                maxLines = 1,
+                                                modifier = Modifier.padding(top = 2.dp)
+                                            )
+                                        }
+                                }
                                 if (index == currentTrackIndex) {
                                     Text("NOW", color = Accent, fontSize = 7.sp, fontWeight = FontWeight.Bold)
                                 }
