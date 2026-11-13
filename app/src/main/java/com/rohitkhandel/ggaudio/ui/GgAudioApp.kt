@@ -301,10 +301,13 @@ fun GgAudioApp() {
 
     suspend fun persistPlaybackQueue() {
         try {
+            val storedTracks = queue.take(500).map {
+                PlaybackQueueTrack(it.uri.toString(), it.title.take(512))
+            }
             presetRepository.savePlaybackQueue(
                 PlaybackQueueSnapshot(
-                    tracks = queue.take(500).map { PlaybackQueueTrack(it.uri.toString(), it.title.take(512)) },
-                    currentIndex = if (queue.isEmpty()) 0 else currentTrackIndex.coerceIn(0, queue.lastIndex),
+                    tracks = storedTracks,
+                    currentIndex = if (storedTracks.isEmpty()) 0 else currentTrackIndex.coerceIn(0, storedTracks.lastIndex),
                     positionMs = playbackPositionMs.coerceAtLeast(0L)
                 )
             )
