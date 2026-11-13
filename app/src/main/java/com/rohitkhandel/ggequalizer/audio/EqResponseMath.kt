@@ -1,6 +1,9 @@
 package com.rohitkhandel.ggequalizer.audio
 
+import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_BAND_PASS
+import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_HIGH_PASS
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_HIGH_SHELF
+import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_LOW_PASS
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_LOW_SHELF
 import com.rohitkhandel.ggequalizer.audio.NativeDspBridge.FILTER_PEAKING
 import kotlin.math.PI
@@ -129,7 +132,10 @@ object EqResponseMath {
         val evaluated = frequencyHz.toDouble().coerceIn(1.0, sampleRate * 0.499)
         val gain = gainDb.toDouble().coerceIn(-24.0, 24.0)
         val q = qFactor.toDouble().coerceIn(0.1, 12.0)
-        if (abs(gain) < 0.0001) return 0.0
+        val usesBellOrShelfGain = filterType == FILTER_PEAKING ||
+            filterType == FILTER_LOW_SHELF ||
+            filterType == FILTER_HIGH_SHELF
+        if (usesBellOrShelfGain && abs(gain) < 0.0001) return 0.0
 
         val amplitude = 10.0.pow(gain / 40.0)
         val omega = 2.0 * PI * center / sampleRate
@@ -178,6 +184,33 @@ object EqResponseMath {
                 }
             }
 
+            FILTER_LOW_PASS -> {
+                b0 = (1.0 - cosine) * 0.5
+                b1 = 1.0 - cosine
+                b2 = (1.0 - cosine) * 0.5
+                a0 = 1.0 + alpha
+                a1 = -2.0 * cosine
+                a2 = 1.0 - alpha
+            }
+
+            FILTER_HIGH_PASS -> {
+                b0 = (1.0 + cosine) * 0.5
+                b1 = -(1.0 + cosine)
+                b2 = (1.0 + cosine) * 0.5
+                a0 = 1.0 + alpha
+                a1 = -2.0 * cosine
+                a2 = 1.0 - alpha
+            }
+
+            FILTER_BAND_PASS -> {
+                b0 = alpha
+                b1 = 0.0
+                b2 = -alpha
+                a0 = 1.0 + alpha
+                a1 = -2.0 * cosine
+                a2 = 1.0 - alpha
+            }
+
             else -> return 0.0
         }
 
@@ -204,6 +237,9 @@ object EqResponseMath {
         val denominatorMagnitude = hypot(denominatorReal, denominatorImaginary)
             .coerceAtLeast(MIN_MAGNITUDE)
         val magnitude = (numeratorMagnitude / denominatorMagnitude).coerceAtLeast(MIN_MAGNITUDE)
-        return (20.0 * ln(magnitude) / ln(10.0)).coerceIn(-48.0, 48.0)
+        val filterDb = 20.0 * ln(magnitude) / ln(10.0)
+        // Low/high/band-pass filters use gainDb as a post-filter level trim.
+        val responseDb = if (usesBellOrShelfGain) filterDb else filterDb + gain
+        return responseDb.coerceIn(-48.0, 48.0)
     }
 }
