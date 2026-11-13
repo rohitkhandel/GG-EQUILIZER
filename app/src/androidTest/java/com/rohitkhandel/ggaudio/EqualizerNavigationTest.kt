@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
@@ -25,10 +26,10 @@ class EqualizerNavigationTest {
 
     @Test
     fun bottomNavigationOpensEffectsAndReturnsHome() {
-        composeRule.onNodeWithText("Effects").performClick()
+        composeRule.onNodeWithTag("nav_effects").performClick()
         composeRule.onNodeWithText("Sound effects").assertIsDisplayed()
 
-        composeRule.onNodeWithText("Equalizer").performClick()
+        composeRule.onNodeWithTag("nav_equalizer").performClick()
         composeRule.onNodeWithContentDescription("31 Hz gain").assertExists()
     }
 }

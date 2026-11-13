@@ -14,6 +14,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -66,7 +67,7 @@ fun GgAudioApp() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AppTab.entries.forEach { tab ->
-                    TextButton(onClick = { selectedTab = tab }) {
+                    TextButton(onClick = { selectedTab = tab }, modifier = Modifier.testTag("nav_" + tab.name.lowercase())) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(tab.symbol, color = if (selectedTab == tab) Accent else TextMuted, fontSize = 17.sp)
                             Text(tab.label, color = if (selectedTab == tab) Accent else TextMuted, fontSize = 8.sp)
