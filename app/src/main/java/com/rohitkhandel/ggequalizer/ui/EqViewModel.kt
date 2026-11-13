@@ -394,10 +394,37 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
             count >= 15 -> 15
             else -> 10
         }
-        if (mutableState.value.bandCount == safeCount) return
-        mutableState.update { it.copy(bandCount = safeCount) }
-        audioProfileUpdates.trySend(Unit)
-        recalculateResponse()
+        var changed = false
+        mutableState.update { current ->
+            if (current.bandCount == safeCount) return@update current
+
+            val nextModeState = current.copy(bandCount = safeCount)
+            val nextSelection = nextModeState.nearestVisibleBandSelection()
+            changed = true
+            nextModeState.copy(selectedBandIndex = nextSelection)
+        }
+        if (changed) {
+            audioProfileUpdates.trySend(Unit)
+            recalculateResponse()
+        }
+    }
+
+    /**
+     * Keep the selected fader visible after switching between 10/15-band and
+     * parametric modes. If the old slot is not part of the new mode, select
+     * the visible slot with the closest logarithmic frequency.
+     */
+    private fun EqUiState.nearestVisibleBandSelection(): Int {
+        val visibleIndices = activeBandIndices()
+        if (visibleIndices.isEmpty() || selectedBandIndex in visibleIndices) {
+            return selectedBandIndex
+        }
+
+        val referenceFrequency = bands.getOrNull(selectedBandIndex)?.frequencyHz ?: 1_000f
+        val safeReference = referenceFrequency.coerceAtLeast(1f)
+        return visibleIndices.minByOrNull { index ->
+            abs(ln(bands[index].frequencyHz.coerceAtLeast(1f) / safeReference))
+        } ?: selectedBandIndex
     }
 
     fun setShowCurveOnSliders(enabled: Boolean) {
@@ -693,7 +720,7 @@ class EqViewModel(application: Application) : AndroidViewModel(application) {
                 bands = EqUiState().bands,
                 parametricBandIndices = emptyList(),
                 bandCount = 10,
-                selectedBandIndex = 15,
+                selectedBandIndex = EqUiState().selectedBandIndex,
                 preampGainDb = 0f,
                 bassGainDb = 0f,
                 trebleGainDb = 0f,
