@@ -43,6 +43,8 @@ import com.rohitkhandel.ggaudio.audio.EqualizerBand
 import com.rohitkhandel.ggaudio.audio.EqualizerDefaults
 import com.rohitkhandel.ggaudio.audio.GlobalAudioEffectsController
 import com.rohitkhandel.ggaudio.audio.LocalAudioFile
+import com.rohitkhandel.ggaudio.audio.PlaybackQueueSnapshot
+import com.rohitkhandel.ggaudio.audio.PlaybackQueueTrack
 import com.rohitkhandel.ggaudio.audio.GgAudioPlaybackService
 import com.rohitkhandel.ggaudio.audio.PlaybackDspSettings
 import com.rohitkhandel.ggaudio.audio.EqualizerPresetLibrary
@@ -91,6 +93,7 @@ fun GgAudioApp() {
     var settingsStatus by remember { mutableStateOf("Loading saved settings…") }
     var mediaConnectionError by remember { mutableStateOf<String?>(null) }
     var queueRevision by remember { mutableIntStateOf(0) }
+    var queueRestored by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val presetRepository = remember(context) { SavedEqualizerPresetRepository(context) }
@@ -110,6 +113,26 @@ fun GgAudioApp() {
             settingsStatus = error.message ?: "Could not load saved settings; defaults are active."
         } finally {
             settingsLoaded = true
+        }
+    }
+
+    LaunchedEffect(presetRepository) {
+        try {
+            val storedQueue = presetRepository.playbackQueue.first()
+            val restoredTracks = storedQueue.tracks.mapNotNull { track ->
+                runCatching { LocalAudioFile(Uri.parse(track.uri), track.title) }.getOrNull()
+            }
+            if (restoredTracks.isNotEmpty()) {
+                queue = restoredTracks
+                currentTrackIndex = storedQueue.currentIndex.coerceIn(0, restoredTracks.lastIndex)
+                selectedTrack = restoredTracks[currentTrackIndex].title
+                playbackPositionMs = storedQueue.positionMs
+                queueRevision += 1
+            }
+        } catch (error: Exception) {
+            playbackError = error.message ?: "Could not restore the previous queue."
+        } finally {
+            queueRestored = true
         }
     }
 
@@ -186,6 +209,8 @@ fun GgAudioApp() {
                 LocalAudioFile(uri, queryDisplayName(context, uri))
             }
             queue = chosenTracks
+            currentTrackIndex = 0
+            playbackPositionMs = 0L
             queueRevision += 1
             currentTrackIndex = 0
             selectedTrack = chosenTracks.firstOrNull()?.title
@@ -210,7 +235,9 @@ fun GgAudioApp() {
                     )
                     .build()
             }
-            player.setMediaItems(mediaItems, 0, 0L)
+            val startIndex = currentTrackIndex.coerceIn(0, mediaItems.lastIndex)
+            val startPosition = playbackPositionMs.coerceAtLeast(0L)
+            player.setMediaItems(mediaItems, startIndex, startPosition)
             player.prepare()
         }
     }
@@ -269,6 +296,23 @@ fun GgAudioApp() {
             playbackDurationMs = player.duration.coerceAtLeast(0L)
             playbackPositionMs = player.currentPosition.coerceAtLeast(0L)
             onDispose { player.removeListener(listener) }
+        }
+    }
+
+    LaunchedEffect(queue, currentTrackIndex, playbackPositionMs, queueRestored) {
+        if (queueRestored) {
+            delay(1_200)
+            try {
+                presetRepository.savePlaybackQueue(
+                    PlaybackQueueSnapshot(
+                        tracks = queue.take(500).map { PlaybackQueueTrack(it.uri.toString(), it.title.take(512)) },
+                        currentIndex = if (queue.isEmpty()) 0 else currentTrackIndex.coerceIn(0, queue.lastIndex),
+                        positionMs = playbackPositionMs.coerceAtLeast(0L)
+                    )
+                )
+            } catch (error: Exception) {
+                playbackError = error.message ?: "Could not save the playback queue."
+            }
         }
     }
 

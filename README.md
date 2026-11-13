@@ -17,6 +17,7 @@ A private, offline-first native Android audio player and equalizer. The goal is 
 - Optional Android global Equalizer, BassBoost and Virtualizer adapter with device capability checks.
 - Custom equalizer presets can be saved, applied and deleted using on-device DataStore storage.
 - Active EQ curve, preamp, and optional effect levels are restored and saved automatically on-device.
+- The local playback queue, selected track and last position are restored from on-device storage; playback does not auto-start.
 - Local presets and playback are offline; the app does not upload audio.
 
 ## Important audio scope
