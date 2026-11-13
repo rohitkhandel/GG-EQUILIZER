@@ -515,6 +515,9 @@ private fun StudioBandPanel(
                 onFilter(when (band.filterType) {
                     NativeDspBridge.FILTER_PEAKING -> NativeDspBridge.FILTER_LOW_SHELF
                     NativeDspBridge.FILTER_LOW_SHELF -> NativeDspBridge.FILTER_HIGH_SHELF
+                    NativeDspBridge.FILTER_HIGH_SHELF -> NativeDspBridge.FILTER_LOW_PASS
+                    NativeDspBridge.FILTER_LOW_PASS -> NativeDspBridge.FILTER_HIGH_PASS
+                    NativeDspBridge.FILTER_HIGH_PASS -> NativeDspBridge.FILTER_BAND_PASS
                     else -> NativeDspBridge.FILTER_PEAKING
                 })
             }
@@ -860,8 +863,11 @@ private fun studioToneValueText(valueDb: Float, mode: String): String = when (mo
 }
 
 private fun studioFilterShort(type: Int): String = when (type) {
-    NativeDspBridge.FILTER_LOW_SHELF -> "LOW"
-    NativeDspBridge.FILTER_HIGH_SHELF -> "HIGH"
+    NativeDspBridge.FILTER_LOW_SHELF -> "LS"
+    NativeDspBridge.FILTER_HIGH_SHELF -> "HS"
+    NativeDspBridge.FILTER_LOW_PASS -> "LP"
+    NativeDspBridge.FILTER_HIGH_PASS -> "HP"
+    NativeDspBridge.FILTER_BAND_PASS -> "BP"
     else -> "PEAK"
 }
 
