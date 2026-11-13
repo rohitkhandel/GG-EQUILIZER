@@ -11,6 +11,9 @@ object NativeDspBridge {
     const val FILTER_PEAKING = 0
     const val FILTER_LOW_SHELF = 1
     const val FILTER_HIGH_SHELF = 2
+    const val FILTER_LOW_PASS = 3
+    const val FILTER_HIGH_PASS = 4
+    const val FILTER_BAND_PASS = 5
     const val MAX_PARAMETRIC_BANDS = 32
 
     init {
@@ -44,6 +47,14 @@ object NativeDspBridge {
         handle: Long,
         bassGainDb: Float,
         trebleGainDb: Float
+    ): Boolean
+
+    external fun nativeSetToneParameters(
+        handle: Long,
+        bassFrequencyHz: Float,
+        bassQFactor: Float,
+        trebleFrequencyHz: Float,
+        trebleQFactor: Float
     ): Boolean
 
     external fun nativeSetPreampGain(handle: Long, gainDb: Float): Boolean
