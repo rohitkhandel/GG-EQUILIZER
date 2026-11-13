@@ -18,7 +18,10 @@ constexpr double kPi = 3.14159265358979323846;
 bool isSupportedType(BiquadType type) noexcept {
     return type == BiquadType::Peaking ||
            type == BiquadType::LowShelf ||
-           type == BiquadType::HighShelf;
+           type == BiquadType::HighShelf ||
+           type == BiquadType::LowPass ||
+           type == BiquadType::HighPass ||
+           type == BiquadType::BandPass;
 }
 
 bool finiteCoefficients(double b0, double b1, double b2,
@@ -62,7 +65,15 @@ bool BiquadFilter::configure(float sampleRateHz,
     parameters_.gainDb = static_cast<float>(gainDb);
     parameters_.qFactor = static_cast<float>(q);
 
-    if (std::abs(gainDb) < 0.0001) {
+    const bool usesBellOrShelfGain =
+        parameters.type == BiquadType::Peaking ||
+        parameters.type == BiquadType::LowShelf ||
+        parameters.type == BiquadType::HighShelf;
+    outputGainLinear_ = usesBellOrShelfGain
+        ? 1.0F
+        : static_cast<float>(std::pow(10.0, gainDb / 20.0));
+
+    if (usesBellOrShelfGain && std::abs(gainDb) < 0.0001) {
         coefficients_ = BiquadCoefficients{};
         reset();
         return true;
@@ -129,6 +140,33 @@ bool BiquadFilter::configure(float sampleRateHz,
             }
             break;
         }
+
+        case BiquadType::LowPass:
+            b0 = (1.0 - cosine) * 0.5;
+            b1 = 1.0 - cosine;
+            b2 = (1.0 - cosine) * 0.5;
+            a0 = 1.0 + alpha;
+            a1 = -2.0 * cosine;
+            a2 = 1.0 - alpha;
+            break;
+
+        case BiquadType::HighPass:
+            b0 = (1.0 + cosine) * 0.5;
+            b1 = -(1.0 + cosine);
+            b2 = (1.0 + cosine) * 0.5;
+            a0 = 1.0 + alpha;
+            a1 = -2.0 * cosine;
+            a2 = 1.0 - alpha;
+            break;
+
+        case BiquadType::BandPass:
+            b0 = alpha;
+            b1 = 0.0;
+            b2 = -alpha;
+            a0 = 1.0 + alpha;
+            a1 = -2.0 * cosine;
+            a2 = 1.0 - alpha;
+            break;
     }
 
     if (!finiteCoefficients(b0, b1, b2, a0, a1, a2) ||
@@ -169,11 +207,12 @@ float BiquadFilter::processSample(float input) noexcept {
         return 0.0F;
     }
 
-    const float output = coefficients_.b0 * input + z1_;
+    const float filteredOutput = coefficients_.b0 * input + z1_;
+    const float output = filteredOutput * outputGainLinear_;
     const float nextZ1 =
-        coefficients_.b1 * input - coefficients_.a1 * output + z2_;
+        coefficients_.b1 * input - coefficients_.a1 * filteredOutput + z2_;
     const float nextZ2 =
-        coefficients_.b2 * input - coefficients_.a2 * output;
+        coefficients_.b2 * input - coefficients_.a2 * filteredOutput;
 
     if (!std::isfinite(output) ||
         !std::isfinite(nextZ1) ||
